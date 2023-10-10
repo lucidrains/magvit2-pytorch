@@ -1,6 +1,6 @@
 ## MagViT2 - Pytorch (wip)
 
-Implementation of <a href="https://arxiv.org/abs/2310.05737">MagViT2</a> in Pytorch
+Implementation of MagViT2 from <a href="https://arxiv.org/abs/2310.05737">Language Model Beats Diffusion - Tokenizer is Key to Visual Generation</a> in Pytorch
 
 ## Citations
 
