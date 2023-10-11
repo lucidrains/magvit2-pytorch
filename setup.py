@@ -19,7 +19,7 @@ setup(
   ],
   install_requires=[
     'einops>=0.7.0',
-    'vector-quantize-pytorch>=1.9.0',
+    'vector-quantize-pytorch>=1.9.4',
     'torch'
   ],
   classifiers=[

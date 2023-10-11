@@ -2,6 +2,8 @@ import torch
 from torch import nn, einsum, Tensor
 from torch.nn import Module, ModuleList
 
+from vector_quantize_pytorch import LFQ
+
 from einops import rearrange, repeat
 
 # helper
