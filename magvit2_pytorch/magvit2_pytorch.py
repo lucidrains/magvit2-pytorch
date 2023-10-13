@@ -61,31 +61,41 @@ class CausalConv3d(Module):
         x = F.pad(x, self.time_causal_padding, mode = self.pad_mode)
         return self.conv(x)
 
-class CausalConvTranspose1d(Module):
+class CausalConvTranspose3d(Module):
     def __init__(
         self,
         chan_in,
         chan_out,
-        time_kernel_size,
+        kernel_size,
         *,
-        stride,
+        time_stride,
         **kwargs
     ):
         super().__init__()
-        self.upsample_factor = stride
-        self.conv = nn.ConvTranspose1d(chan_in, chan_out, time_kernel_size, stride, **kwargs)
+        kernel_size = cast_tuple(kernel_size, 3)
+        assert len(kernel_size) == 3
+
+        time_kernel_size, height_kernel_size, width_kernel_size = kernel_size
+
+        assert is_odd(height_kernel_size) and is_odd(width_kernel_size)
+
+        self.upsample_factor = time_stride
+
+        height_pad = height_kernel_size // 2
+        width_pad = width_kernel_size // 2
+
+        stride = (time_stride, 1, 1)
+        padding = (0, height_pad, width_pad)
+
+        self.conv = nn.ConvTranspose3d(chan_in, chan_out, kernel_size, stride, padding = padding, **kwargs)
 
     def forward(self, x):
         assert x.ndim == 5
-        x = rearrange(x, 'b c t h w -> b h w c t')
-        x, ps = pack_one(x, '* c t')
-        n = x.shape[-1]
+        t = x.shape[2]
 
         out = self.conv(x)
-        out = out[..., :(n * self.upsample_factor)]
 
-        out = unpack_one(out, ps, '* c t')
-        out = rearrange(out ,'b h w c t -> b c t h w')
+        out = out[..., :(t * self.upsample_factor), :, :]
         return out
 
 # main class
