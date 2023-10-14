@@ -18,6 +18,7 @@ setup(
     'generative video model'
   ],
   install_requires=[
+    'beartype',
     'einops>=0.7.0',
     'vector-quantize-pytorch>=1.9.4',
     'torch'
