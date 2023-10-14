@@ -20,6 +20,9 @@ from beartype.typing import Union, Tuple, Optional
 def exists(v):
     return v is not None
 
+def default(v, d):
+    return v if exists(v) else d
+
 def divisible_by(num, den):
     return (num % den) == 0
 
@@ -47,6 +50,82 @@ class Residual(Module):
 
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
+
+# depth to space upsamples
+
+class SpatialUpsample2x(Module):
+    def __init__(
+        self,
+        dim,
+        dim_out = None
+    ):
+        super().__init__()
+        dim_out = default(dim_out, dim)
+        conv = nn.Conv2d(dim, dim_out * 4, 1)
+
+        self.net = nn.Sequential(
+            conv,
+            nn.SiLU(),
+            Rearrange('b (c p1 p2) h w -> b c (h p1) (w p2)', p1 = 2, p2 = 2)
+        )
+
+        self.init_conv_(conv)
+
+    def init_conv_(self, conv):
+        o, i, h, w = conv.weight.shape
+        conv_weight = torch.empty(o // 4, i, h, w)
+        nn.init.kaiming_uniform_(conv_weight)
+        conv_weight = repeat(conv_weight, 'o ... -> (o 4) ...')
+
+        conv.weight.data.copy_(conv_weight)
+        nn.init.zeros_(conv.bias.data)
+
+    def forward(self, x):
+        x = rearrange(x, 'b c t h w -> b t c h w')
+        x, ps = pack_one(x, '* c h w')
+
+        out = self.net(x)
+
+        out = unpack_one(out, ps, '* c h w')
+        out = rearrange(out, 'b t c h w -> b c t h w')
+        return out
+
+class TimeUpsample2x(Module):
+    def __init__(
+        self,
+        dim,
+        dim_out = None
+    ):
+        super().__init__()
+        dim_out = default(dim_out, dim)
+        conv = nn.Conv1d(dim, dim_out * 2, 1)
+
+        self.net = nn.Sequential(
+            conv,
+            nn.SiLU(),
+            Rearrange('b (c p) t -> b c (t p)', p = 2)
+        )
+
+        self.init_conv_(conv)
+
+    def init_conv_(self, conv):
+        o, i, t = conv.weight.shape
+        conv_weight = torch.empty(o // 2, i, t)
+        nn.init.kaiming_uniform_(conv_weight)
+        conv_weight = repeat(conv_weight, 'o ... -> (o 2) ...')
+
+        conv.weight.data.copy_(conv_weight)
+        nn.init.zeros_(conv.bias.data)
+
+    def forward(self, x):
+        x = rearrange(x, 'b c t h w -> b h w c t')
+        x, ps = pack_one(x, '* c t')
+
+        out = self.net(x)
+
+        out = unpack_one(out, ps, '* c t')
+        out = rearrange(out, 'b h w c t -> b c t h w')
+        return out
 
 # autoencoder - only best variant here offered, with causal conv 3d
 
