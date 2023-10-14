@@ -51,6 +51,50 @@ class Residual(Module):
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
 
+# strided conv downsamples
+
+class SpatialDownsample2x(Module):
+    def __init__(
+        self,
+        dim,
+        dim_out = None,
+        kernel_size = 3
+    ):
+        super().__init__()
+        dim_out = default(dim_out, dim)
+        self.conv = nn.Conv2d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
+
+    def forward(self, x):
+        x = rearrange(x, 'b c t h w -> b t c h w')
+        x, ps = pack_one(x, '* c h w')
+
+        out = self.conv(x)
+
+        out = unpack_one(out, ps, '* c h w')
+        out = rearrange(out, 'b t c h w -> b c t h w')
+        return out
+
+class TimeDownsample2x(Module):
+    def __init__(
+        self,
+        dim,
+        dim_out = None,
+        kernel_size = 3
+    ):
+        super().__init__()
+        dim_out = default(dim_out, dim)
+        self.conv = nn.Conv1d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
+
+    def forward(self, x):
+        x = rearrange(x, 'b c t h w -> b h w c t')
+        x, ps = pack_one(x, '* c t')
+
+        out = self.conv(x)
+
+        out = unpack_one(out, ps, '* c t')
+        out = rearrange(out, 'b h w c t -> b c t h w')
+        return out
+
 # depth to space upsamples
 
 class SpatialUpsample2x(Module):
