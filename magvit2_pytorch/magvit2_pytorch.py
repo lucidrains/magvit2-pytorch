@@ -278,6 +278,7 @@ class CausalConv3d(Module):
         height_pad = height_kernel_size // 2
         width_pad = width_kernel_size // 2
 
+        self.time_pad = time_pad
         self.time_causal_padding = (width_pad, width_pad, height_pad, height_pad, time_pad, 0)
 
         stride = (stride, 1, 1)
@@ -285,7 +286,9 @@ class CausalConv3d(Module):
         self.conv = nn.Conv3d(chan_in, chan_out, kernel_size, stride = stride, dilation = dilation, **kwargs)
 
     def forward(self, x):
-        x = F.pad(x, self.time_causal_padding, mode = self.pad_mode)
+        pad_mode = self.pad_mode if self.time_pad < x.shape[2] else 'constant'
+
+        x = F.pad(x, self.time_causal_padding, mode = pad_mode)
         return self.conv(x)
 
 @beartype
@@ -373,6 +376,7 @@ class VideoTokenizer(Module):
         self.conv_out = CausalConv3d(init_dim, channels, output_conv_kernel_size, pad_mode = pad_mode)
 
         dim = init_dim
+        time_downsample_factor = 1
 
         for layer_type, dim_out in layers:
             if layer_type == 'residual':
@@ -389,6 +393,7 @@ class VideoTokenizer(Module):
                 encoder_layer = TimeDownsample2x(dim, dim_out)
                 decoder_layer = TimeUpsample2x(dim_out, dim)
 
+                time_downsample_factor *= 2
             else:
                 raise ValueError(f'unknown layer type {layer_type}')
 
@@ -396,6 +401,8 @@ class VideoTokenizer(Module):
             self.decoder_layers.insert(0, decoder_layer)
 
             dim = dim_out
+
+        self.time_padding = time_downsample_factor - 1
 
         # lookup free quantizer(s) - multiple codebooks is possible
         # each codebook will get its own entropy regularization
@@ -435,13 +442,26 @@ class VideoTokenizer(Module):
     @beartype
     def forward(
         self,
-        video: Tensor,
+        video_or_images: Tensor,
         return_loss = False,
         return_codes = False
     ):
+        is_images = video_or_images.ndim == 4
+
+        # accept images for image pretraining (curriculum learning from images to video)
+
+        if is_images:
+            video = rearrange(video_or_images, 'b c ... -> b c 1 ...')
+        else:
+            video = video_or_images
+
+        # pad the time, accounting for total time downsample factor, so that images can be trained independently
+
+        padded_video = F.pad(video, (0, 0, 0, 0, self.time_padding, 0), value = 0.)
+
         # encoder
 
-        x = self.encode(video)
+        x = self.encode(padded_video)
 
         # lookup free quantization
 
@@ -452,7 +472,9 @@ class VideoTokenizer(Module):
 
         # decoder
 
-        recon_video = self.decode(quantized)
+        padded_recon_video = self.decode(quantized)
+
+        recon_video = padded_recon_video[:, :, self.time_padding:]
 
         # reconstruction loss
 
