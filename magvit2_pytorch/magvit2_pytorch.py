@@ -71,6 +71,8 @@ class AdaptiveConv3DMod(Module):
 
         self.eps = eps
 
+        assert is_odd(spatial_kernel) and is_odd(time_kernel)
+
         self.spatial_kernel = spatial_kernel
         self.time_kernel = time_kernel
 
