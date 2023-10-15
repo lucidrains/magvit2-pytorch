@@ -345,7 +345,7 @@ class VideoTokenizer(Module):
     @beartype
     def __init__(
         self,
-        layers: Tuple[int, ...] = (
+        layers: Tuple[Tuple[str, int], ...] = (
             ('residual', 64),
             ('residual', 64),
             ('residual', 64)
