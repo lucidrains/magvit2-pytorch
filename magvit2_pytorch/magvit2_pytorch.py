@@ -350,6 +350,7 @@ class VideoTokenizer(Module):
             ('residual', 64),
             ('residual', 64)
         ),
+        residual_conv_kernel_size = 3,
         num_codebooks = 1,
         codebook_size = 8192,
         channels = 3,
@@ -373,12 +374,21 @@ class VideoTokenizer(Module):
 
         dim = init_dim
 
-        for layer_type, dim_out in range(layers):
+        for layer_type, dim_out in layers:
             if layer_type == 'residual':
                 assert dim == dim_out
 
-                encoder_layer = ResidualUnit(dim, dim_out)
-                decoder_layer = ResidualUnit(dim, dim_out)
+                encoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
+                decoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
+
+            elif layer_type == 'compress_space':
+                encoder_layer = SpatialDownsample2x(dim, dim_out)
+                decoder_layer = SpatialUpsample2x(dim_out, dim)
+
+            elif layer_type == 'compress_time':
+                encoder_layer = TimeDownsample2x(dim, dim_out)
+                decoder_layer = TimeUpsample2x(dim_out, dim)
+
             else:
                 raise ValueError(f'unknown layer type {layer_type}')
 
@@ -391,7 +401,7 @@ class VideoTokenizer(Module):
         # each codebook will get its own entropy regularization
 
         self.quantizers = LFQ(
-            dim = init_dim,
+            dim = dim,
             codebook_size = codebook_size,
             num_codebooks = num_codebooks,
             entropy_loss_weight = lfq_entropy_loss_weight,
@@ -415,12 +425,12 @@ class VideoTokenizer(Module):
 
     @beartype
     def decode(self, codes: Tensor):
-        x = quantized
+        x = codes
 
         for fn in self.decoder_layers:
             x = fn(x)
 
-        return self.conv_out(quantized)
+        return self.conv_out(x)
 
     @beartype
     def forward(
