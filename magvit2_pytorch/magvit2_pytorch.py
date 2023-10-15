@@ -9,7 +9,7 @@ from collections import namedtuple
 
 from vector_quantize_pytorch import LFQ
 
-from einops import rearrange, repeat, pack, unpack
+from einops import rearrange, repeat, reduce, pack, unpack
 from einops.layers.torch import Rearrange
 
 from beartype import beartype
@@ -50,6 +50,76 @@ class Residual(Module):
 
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
+
+# adaptive conv from Karras et al. Stylegan2
+# for conditioning on latents
+
+class AdaptiveConv3DMod(Module):
+    @beartype
+    def __init__(
+        self,
+        dim,
+        *,
+        spatial_kernel,
+        time_kernel,
+        dim_out = None,
+        demod = True,
+        eps = 1e-8,
+    ):
+        super().__init__()
+        dim_out = default(dim_out, dim)
+
+        self.eps = eps
+
+        self.spatial_kernel = spatial_kernel
+        self.time_kernel = time_kernel
+
+        self.padding = (*((spatial_kernel // 2,) * 4), *((time_kernel // 2,) * 2))
+        self.weights = nn.Parameter(torch.randn((dim_out, dim, time_kernel, spatial_kernel, spatial_kernel)))
+
+        self.demod = demod
+
+        nn.init.kaiming_normal_(self.weights, a = 0, mode = 'fan_in', nonlinearity = 'selu')
+
+    def forward(
+        self,
+        fmap,
+        mod: Optional[Tensor] = None
+    ):
+        """
+        notation
+
+        b - batch
+        n - convs
+        o - output
+        i - input
+        k - kernel
+        """
+
+        b = fmap.shape[0]
+
+        # prepare weights for modulation
+
+        weights = self.weights
+
+        # do the modulation, demodulation, as done in stylegan2
+
+        mod = rearrange(mod, 'b i -> b 1 i 1 1 1')
+
+        weights = weights * (mod + 1)
+
+        if self.demod:
+            inv_norm = reduce(weights ** 2, 'b o i k0 k1 k2 -> b o 1 1 1 1', 'sum').clamp(min = self.eps).rsqrt()
+            weights = weights * inv_norm
+
+        fmap = rearrange(fmap, 'b c t h w -> 1 (b c) t h w')
+
+        weights = rearrange(weights, 'b o ... -> (b o) ...')
+
+        fmap = F.pad(fmap, self.padding)
+        fmap = F.conv3d(fmap, weights, groups = b)
+
+        return rearrange(fmap, '1 (b o) ... -> b o ...', b = b)
 
 # strided conv downsamples
 
@@ -279,7 +349,7 @@ class VideoTokenizer(Module):
     ):
         super().__init__()
 
-        # project in
+        # encoder
 
         self.conv_in = CausalConv3d(channels, init_dim, input_conv_kernel_size, pad_mode = pad_mode)
 
@@ -289,10 +359,12 @@ class VideoTokenizer(Module):
         self.quantizers = LFQ(
             dim = init_dim,
             codebook_size = codebook_size,
-            num_codebooks = num_codebooks
+            num_codebooks = num_codebooks,
+            entropy_loss_weight = lfq_entropy_loss_weight,
+            diversity_gamma = lfq_diversity_gamma
         )
 
-        # project out
+        # decoder
 
         self.conv_out = CausalConv3d(init_dim, channels, output_conv_kernel_size, pad_mode = pad_mode)
 
@@ -302,14 +374,13 @@ class VideoTokenizer(Module):
         video: Tensor,
         return_loss = False
     ):
-        x = self.conv_in(video)
-
         # encoder
+
+        x = self.conv_in(video)
 
         # lookup free quantization
 
         quantized, codes, aux_losses = self.quantizers(x)
-
 
         # decoder
 
