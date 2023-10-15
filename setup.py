@@ -20,7 +20,7 @@ setup(
   install_requires=[
     'beartype',
     'einops>=0.7.0',
-    'vector-quantize-pytorch>=1.9.4',
+    'vector-quantize-pytorch>=1.9.7',
     'torch'
   ],
   classifiers=[

@@ -286,27 +286,10 @@ class VideoTokenizer(Module):
         # lookup free quantizer(s) - multiple codebooks is possible
         # each codebook will get its own entropy regularization
 
-        assert log2(codebook_size).is_integer(), f'num_codes must be a power of 2'
-
-        codebook_dim = int(log2(codebook_size))
-        codebook_dim = codebook_dim * num_codebooks
-
-        self.to_codebook_dim = Sequential(
-            nn.Conv3d(init_dim, codebook_dim, 1),
-            Rearrange('b (c d) ... -> c b d ...', c = num_codebooks)
-        )
-
-        self.quantizers = ModuleList([
-            LFQ(
-                codebook_size = codebook_size,
-                entropy_loss_weight = lfq_entropy_loss_weight,
-                diversity_gamma = lfq_diversity_gamma
-            ) for _ in range(num_codebooks)
-        ])
-
-        self.to_decoder_dim = Sequential(
-            Rearrange('c b d ... -> b (c d) ...', c = num_codebooks),
-            nn.Conv3d(codebook_dim, init_dim, 1)
+        self.quantizers = LFQ(
+            dim = init_dim,
+            codebook_size = codebook_size,
+            num_codebooks = num_codebooks
         )
 
         # project out
@@ -325,29 +308,12 @@ class VideoTokenizer(Module):
 
         # lookup free quantization
 
-        codes = self.to_codebook_dim(x)
+        quantized, codes, aux_losses = self.quantizers(x)
 
-        all_quantized = []
-        all_indices = []
-
-        aux_losses = 0.
-
-        for lfq, code in zip(self.quantizers, codes):
-            quantized, indices, aux_loss = lfq(code)
-
-            aux_losses = aux_losses + aux_loss
-
-            all_indices.append(indices)
-            all_quantized.append(quantized)
-
-        all_quantized = torch.stack(all_quantized)
-        all_indices = torch.stack(all_indices)
-
-        self.to_decoder_dim(all_quantized)
 
         # decoder
 
-        recon_video = self.conv_out(x)
+        recon_video = self.conv_out(quantized)
 
         # reconstruction loss
 
