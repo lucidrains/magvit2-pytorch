@@ -446,12 +446,13 @@ class VideoTokenizer(Module):
         return_loss = False,
         return_codes = False
     ):
-        is_images = video_or_images.ndim == 4
+        assert not (return_loss and return_codes)
+        assert video_or_images.ndim in {4, 5}
 
         # accept images for image pretraining (curriculum learning from images to video)
 
-        if is_images:
-            video = rearrange(video_or_images, 'b c ... -> b c 1 ...')
+        if video_or_images.ndim == 4:
+            video = rearrange(video, 'b c ... -> b c 1 ...')
         else:
             video = video_or_images
 
