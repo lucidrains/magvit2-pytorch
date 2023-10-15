@@ -23,6 +23,9 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
+def identity(t):
+    return t
+
 def divisible_by(num, den):
     return (num % den) == 0
 
@@ -41,7 +44,12 @@ def cast_tuple(t, length = 1):
 # helper classes
 
 def Sequential(*modules):
-    return nn.Sequential(*filter(exists, modules))
+    modules = [*filter(exists, modules)]
+
+    if len(modules) == 0:
+        return nn.Identity()
+
+    return nn.Sequential(*modules)
 
 class Residual(Module):
     def __init__(self, fn):
@@ -337,8 +345,11 @@ class VideoTokenizer(Module):
     @beartype
     def __init__(
         self,
-        encoder_depth,
-        decoder_depth,
+        layers: Tuple[int, ...] = (
+            ('residual', 64),
+            ('residual', 64),
+            ('residual', 64)
+        ),
         num_codebooks = 1,
         codebook_size = 8192,
         channels = 3,
@@ -355,6 +366,27 @@ class VideoTokenizer(Module):
 
         self.conv_in = CausalConv3d(channels, init_dim, input_conv_kernel_size, pad_mode = pad_mode)
 
+        self.encoder_layers = ModuleList([])
+        self.decoder_layers = ModuleList([])
+
+        self.conv_out = CausalConv3d(init_dim, channels, output_conv_kernel_size, pad_mode = pad_mode)
+
+        dim = init_dim
+
+        for layer_type, dim_out in range(layers):
+            if layer_type == 'residual':
+                assert dim == dim_out
+
+                encoder_layer = ResidualUnit(dim, dim_out)
+                decoder_layer = ResidualUnit(dim, dim_out)
+            else:
+                raise ValueError(f'unknown layer type {layer_type}')
+
+            self.encoder_layers.append(encoder_layer)
+            self.decoder_layers.insert(0, decoder_layer)
+
+            dim = dim_out
+
         # lookup free quantizer(s) - multiple codebooks is possible
         # each codebook will get its own entropy regularization
 
@@ -366,27 +398,51 @@ class VideoTokenizer(Module):
             diversity_gamma = lfq_diversity_gamma
         )
 
-        # decoder
+    @beartype
+    def encode(
+        self,
+        video: Tensor,
+        quantize = False
+    ):
+        x = self.conv_in(video)
 
-        self.conv_out = CausalConv3d(init_dim, channels, output_conv_kernel_size, pad_mode = pad_mode)
+        for fn in self.encoder_layers:
+            x = fn(x)
+
+        maybe_quantize = identity if not quantize else self.quantizers
+
+        return maybe_quantize(x)
+
+    @beartype
+    def decode(self, codes: Tensor):
+        x = quantized
+
+        for fn in self.decoder_layers:
+            x = fn(x)
+
+        return self.conv_out(quantized)
 
     @beartype
     def forward(
         self,
         video: Tensor,
-        return_loss = False
+        return_loss = False,
+        return_codes = False
     ):
         # encoder
 
-        x = self.conv_in(video)
+        x = self.encode(video)
 
         # lookup free quantization
 
         quantized, codes, aux_losses = self.quantizers(x)
 
+        if return_codes:
+            return codes
+
         # decoder
 
-        recon_video = self.conv_out(quantized)
+        recon_video = self.decode(quantized)
 
         # reconstruction loss
 
