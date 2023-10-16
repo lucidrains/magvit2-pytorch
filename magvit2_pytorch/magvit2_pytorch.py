@@ -41,6 +41,11 @@ def is_odd(n):
 def cast_tuple(t, length = 1):
     return t if isinstance(t, tuple) else ((t,) * length)
 
+def pad_at_dim(t, pad, dim = -1, value = 0.):
+    dims_from_right = (- dim - 1) if dim < 0 else (t.ndim - dim - 1)
+    zeros = ((0, 0) * dims_from_right)
+    return F.pad(t, (*zeros, *pad), value = value)
+
 # helper classes
 
 def Sequential(*modules):
@@ -463,7 +468,7 @@ class VideoTokenizer(Module):
 
         # pad the time, accounting for total time downsample factor, so that images can be trained independently
 
-        padded_video = F.pad(video, (0, 0, 0, 0, self.time_padding, 0), value = 0.)
+        padded_video = pad_at_dim(video, (self.time_padding, 0), value = 0., dim = 2)
 
         # encoder
 
