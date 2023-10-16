@@ -31,7 +31,7 @@ tokenizer = VideoTokenizer(
 
 # get a ton of videos
 
-videos = torch.randn(2, 3, 16, 256, 256) # (batch, channels, time, height, width)
+videos = torch.randn(2, 3, 16 + 1, 256, 256) # (batch, channels, time, height, width)
 
 # course it through the autoencoder
 

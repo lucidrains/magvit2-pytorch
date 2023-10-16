@@ -1,4 +1,4 @@
-from math import log2
+from math import log2, ceil
 
 import torch
 import torch.nn.functional as F
@@ -84,7 +84,7 @@ class AdaptiveConv3DMod(Module):
         self.spatial_kernel = spatial_kernel
         self.time_kernel = time_kernel
 
-        self.padding = (*((spatial_kernel // 2,) * 4), *((time_kernel // 2,) * 2))
+        self.padding = (*((spatial_kernel // 2,) * 4), time_kernel - 1, 0)
         self.weights = nn.Parameter(torch.randn((dim_out, dim, time_kernel, spatial_kernel, spatial_kernel)))
 
         self.demod = demod
@@ -402,6 +402,7 @@ class VideoTokenizer(Module):
 
             dim = dim_out
 
+        self.time_downsample_factor = time_downsample_factor
         self.time_padding = time_downsample_factor - 1
 
         # lookup free quantizer(s) - multiple codebooks is possible
@@ -455,6 +456,10 @@ class VideoTokenizer(Module):
             video = rearrange(video, 'b c ... -> b c 1 ...')
         else:
             video = video_or_images
+
+        frames = video.shape[2]
+
+        assert divisible_by(frames - 1, self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - 1}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
 
         # pad the time, accounting for total time downsample factor, so that images can be trained independently
 
