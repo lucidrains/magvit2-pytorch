@@ -45,6 +45,16 @@ codes = tokenizer(videos, return_codes = True)
 
 ```
 
+## Todo
+
+- [ ] Magvit2 Tokenizer
+    - [ ] add adversarial loss
+    - [ ] implement the blurpool for antialiasing in discriminator
+    - [ ] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
+    - [ ] add trainer and manage discriminator training
+
+- [ ] MaskGit
+
 ## Citations
 
 ```bibtex

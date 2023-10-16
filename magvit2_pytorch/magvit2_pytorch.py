@@ -1,9 +1,13 @@
+import copy
 from math import log2, ceil
+from functools import wraps
 
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum, Tensor
 from torch.nn import Module, ModuleList
+
+import torchvision
 
 from collections import namedtuple
 
@@ -41,10 +45,39 @@ def is_odd(n):
 def cast_tuple(t, length = 1):
     return t if isinstance(t, tuple) else ((t,) * length)
 
+# tensor helpers
+
 def pad_at_dim(t, pad, dim = -1, value = 0.):
     dims_from_right = (- dim - 1) if dim < 0 else (t.ndim - dim - 1)
     zeros = ((0, 0) * dims_from_right)
     return F.pad(t, (*zeros, *pad), value = value)
+
+def pick_video_frame(video, frame_indices):
+    batch, device = video.shape[0], video.device
+    video = rearrange(video, 'b c f ... -> b f c ...')
+    batch_indices = torch.arange(batch, device = device)
+    batch_indices = rearrange(batch_indices, 'b -> b 1')
+    images = video[batch_indices, frame_indices]
+    images = rearrange(images, 'b 1 c ... -> b c ...')
+    return images
+
+# helper decorators
+
+def remove_vgg(fn):
+    @wraps(fn)
+    def inner(self, *args, **kwargs):
+        has_vgg = hasattr(self, 'vgg')
+        if has_vgg:
+            vgg = self.vgg
+            delattr(self, 'vgg')
+
+        out = fn(self, *args, **kwargs)
+
+        if has_vgg:
+            self.vgg = vgg
+
+        return out
+    return inner
 
 # helper classes
 
@@ -347,7 +380,11 @@ class CausalConvTranspose3d(Module):
 
 # video tokenizer class
 
-LossBreakdown = namedtuple('LossBreakdown', ['recon_loss', 'lfq_entropy_loss'])
+LossBreakdown = namedtuple('LossBreakdown', [
+    'recon_loss',
+    'lfq_aux_losses',
+    'perceptual_loss'
+])
 
 class VideoTokenizer(Module):
     @beartype
@@ -367,7 +404,11 @@ class VideoTokenizer(Module):
         output_conv_kernel_size: Tuple[int, int, int] = (3, 3, 3),
         pad_mode: str = 'reflect',
         lfq_entropy_loss_weight = 0.1,
-        lfq_diversity_gamma = 1.
+        lfq_commitment_loss_weight = 1.,
+        lfq_diversity_gamma = 1.,
+        vgg: Optional[Module] = None,
+        perceptual_loss_weight = 1.
+
     ):
         super().__init__()
 
@@ -418,8 +459,54 @@ class VideoTokenizer(Module):
             codebook_size = codebook_size,
             num_codebooks = num_codebooks,
             entropy_loss_weight = lfq_entropy_loss_weight,
+            commitment_loss_weight = lfq_commitment_loss_weight,
             diversity_gamma = lfq_diversity_gamma
         )
+
+        # dummy loss
+
+        self.register_buffer('zero', torch.zeros(1,), persistent = False)
+
+        # perceptual loss related
+
+        use_vgg = channels == 3 and perceptual_loss_weight > 0.
+
+        self.vgg = None
+        self.perceptual_loss_weight = perceptual_loss_weight
+
+        if use_vgg:
+            if not exists(vgg):
+                vgg = torchvision.models.vgg16(pretrained = True)
+                vgg.classifier = nn.Sequential(*vgg.classifier[:-2])
+
+            self.vgg = vgg
+
+        self.use_vgg = use_vgg
+
+    def copy_for_eval(self):
+        device = next(self.parameters()).device
+        vae_copy = copy.deepcopy(self.cpu())
+
+        if vae_copy.use_vgg_and_gan:
+            del vae_copy.discr
+            del vae_copy.vgg
+
+        vae_copy.eval()
+        return vae_copy.to(device)
+
+    @remove_vgg
+    def state_dict(self, *args, **kwargs):
+        return super().state_dict(*args, **kwargs)
+
+    @remove_vgg
+    def load_state_dict(self, *args, **kwargs):
+        return super().load_state_dict(*args, **kwargs)
+
+    def load(self, path):
+        path = Path(path)
+        assert path.exists()
+        pt = torch.load(str(path))
+        self.load_state_dict(pt)
 
     @beartype
     def encode(
@@ -462,7 +549,7 @@ class VideoTokenizer(Module):
         else:
             video = video_or_images
 
-        frames = video.shape[2]
+        batch, frames = video.shape[0], video.shape[2]
 
         assert divisible_by(frames - 1, self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - 1}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
 
@@ -494,9 +581,24 @@ class VideoTokenizer(Module):
 
         recon_loss = F.mse_loss(video, recon_video)
 
-        total_loss = recon_loss + aux_losses
+        # perceptual loss
 
-        return total_loss, LossBreakdown(recon_loss, aux_losses)
+        if self.use_vgg:
+            frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
+
+            input_vgg_input = pick_video_frame(video, frame_indices)
+            recon_vgg_input = pick_video_frame(recon_video, frame_indices)
+
+            input_vgg_feats = self.vgg(input_vgg_input)
+            recon_vgg_feats = self.vgg(recon_vgg_input)
+
+            perceptual_loss = F.mse_loss(input_vgg_feats, recon_vgg_feats)
+        else:
+            perceptual_loss = self.zero
+
+        total_loss = recon_loss + aux_losses + perceptual_loss * self.perceptual_loss_weight
+
+        return total_loss, LossBreakdown(recon_loss, aux_losses, perceptual_loss)
 
 # main class
 
