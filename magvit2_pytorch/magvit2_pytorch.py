@@ -19,7 +19,7 @@ from einops.layers.torch import Rearrange
 from beartype import beartype
 from beartype.typing import Union, Tuple, Optional
 
-from kornia.filters import filter2d, filter3d
+from kornia.filters import filter3d
 
 # helper
 
@@ -101,41 +101,31 @@ class Residual(Module):
 
 # discriminator with anti-aliased downsampling (blurpool Zhang et al.)
 
-class Blur2D(Module):
+class Blur(Module):
     def __init__(self):
         super().__init__()
         f = torch.Tensor([1, 2, 1])
         self.register_buffer('f', f)
 
-    def forward(self, x):
+    def forward(
+        self,
+        x,
+        space_only = False,
+        time_only = False
+    ):
+        assert not (space_only and time_only)
+
         f = self.f
-        f = einsum('i, j -> i j', f, f)
-        f = rearrange(f, '... -> 1 ...')
 
-        is_video = x.ndim == 5
+        if space_only:
+            f = einsum('i, j -> i j', f, f)
+            f = rearrange(f, '... -> 1 1 ...')
+        elif time_only:
+            f = rearrange(f, 'f -> 1 f 1 1')
+        else:
+            f = einsum('i, j, k -> i j k', f, f, f)
+            f = rearrange(f, '... -> 1 ...')
 
-        if is_video:
-            x = rearrange(x, 'b c t h w -> b t c h w')
-            x, ps = pack_one(x, '* c h w')
-
-        out = filter2d(x, f, normalized = True)
-
-        if is_video:
-            out = unpack_one(out, ps, '* c h w')
-            out = rearrange(out, 'b t c h w -> b c t h w')
-
-        return out
-
-class Blur3D(Module):
-    def __init__(self):
-        super().__init__()
-        f = torch.Tensor([1, 2, 1])
-        self.register_buffer('f', f)
-
-    def forward(self, x):
-        f = self.f
-        f = einsum('i, j, k -> i j k', f, f, f)
-        f = rearrange(f, '... -> 1 ...')
         return filter3d(x, f, normalized = True)
 
 class DiscriminatorBlock(Module):
@@ -311,15 +301,20 @@ class SpatialDownsample2x(Module):
         self,
         dim,
         dim_out = None,
-        kernel_size = 3
+        kernel_size = 3,
+        antialias = False
     ):
         super().__init__()
         dim_out = default(dim_out, dim)
+        self.maybe_blur = Blur() if antialias else None
         self.conv = nn.Conv2d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
 
     def forward(self, x):
         x = rearrange(x, 'b c t h w -> b t c h w')
         x, ps = pack_one(x, '* c h w')
+
+        if exists(self.maybe_blur):
+            x = self.maybe_blur(x, space_only = True)
 
         out = self.conv(x)
 
@@ -332,15 +327,20 @@ class TimeDownsample2x(Module):
         self,
         dim,
         dim_out = None,
-        kernel_size = 3
+        kernel_size = 3,
+        antialias = False
     ):
         super().__init__()
         dim_out = default(dim_out, dim)
+        self.maybe_blur = Blur() if antialias else None
         self.conv = nn.Conv1d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
 
     def forward(self, x):
         x = rearrange(x, 'b c t h w -> b h w c t')
         x, ps = pack_one(x, '* c t')
+
+        if exists(self.maybe_blur):
+            x = self.maybe_blur(x, time_only = True)
 
         out = self.conv(x)
 
@@ -542,7 +542,8 @@ class VideoTokenizer(Module):
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 1.,
         vgg: Optional[Module] = None,
-        perceptual_loss_weight = 1.
+        perceptual_loss_weight = 1.,
+        antialiased_downsample = True
 
     ):
         super().__init__()
@@ -567,11 +568,11 @@ class VideoTokenizer(Module):
                 decoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
 
             elif layer_type == 'compress_space':
-                encoder_layer = SpatialDownsample2x(dim, dim_out)
+                encoder_layer = SpatialDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = SpatialUpsample2x(dim_out, dim)
 
             elif layer_type == 'compress_time':
-                encoder_layer = TimeDownsample2x(dim, dim_out)
+                encoder_layer = TimeDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = TimeUpsample2x(dim_out, dim)
 
                 time_downsample_factor *= 2
