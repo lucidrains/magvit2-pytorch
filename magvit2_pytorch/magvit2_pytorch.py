@@ -19,6 +19,8 @@ from einops.layers.torch import Rearrange
 from beartype import beartype
 from beartype.typing import Union, Tuple, Optional
 
+from kornia.filters import filter2d, filter3d
+
 # helper
 
 def exists(v):
@@ -96,6 +98,139 @@ class Residual(Module):
 
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
+
+# discriminator with anti-aliased downsampling (blurpool Zhang et al.)
+
+class Blur2D(Module):
+    def __init__(self):
+        super().__init__()
+        f = torch.Tensor([1, 2, 1])
+        self.register_buffer('f', f)
+
+    def forward(self, x):
+        f = self.f
+        f = einsum('i, j -> i j', f, f)
+        f = rearrange(f, '... -> 1 ...')
+
+        is_video = x.ndim == 5
+
+        if is_video:
+            x = rearrange(x, 'b c t h w -> b t c h w')
+            x, ps = pack_one(x, '* c h w')
+
+        out = filter2d(x, f, normalized = True)
+
+        if is_video:
+            out = unpack_one(out, ps, '* c h w')
+            out = rearrange(out, 'b t c h w -> b c t h w')
+
+        return out
+
+class Blur3D(Module):
+    def __init__(self):
+        super().__init__()
+        f = torch.Tensor([1, 2, 1])
+        self.register_buffer('f', f)
+
+    def forward(self, x):
+        f = self.f
+        f = einsum('i, j, k -> i j k', f, f, f)
+        f = rearrange(f, '... -> 1 ...')
+        return filter3d(x, f, normalized = True)
+
+class DiscriminatorBlock(Module):
+    def __init__(
+        self,
+        input_channels,
+        filters,
+        downsample = True
+    ):
+        super().__init__()
+        self.conv_res = nn.Conv2d(input_channels, filters, 1, stride = (2 if downsample else 1))
+
+        self.net = nn.Sequential(
+            nn.Conv2d(input_channels, filters, 3, padding = 1),
+            leaky_relu(),
+            nn.Conv2d(filters, filters, 3, padding = 1),
+            leaky_relu()
+        )
+
+        self.downsample = nn.Sequential(
+            Rearrange('b c (h p1) (w p2) -> b (c p1 p2) h w', p1 = 2, p2 = 2),
+            nn.Conv2d(filters * 4, filters, 1)
+        ) if downsample else None
+
+    def forward(self, x):
+        res = self.conv_res(x)
+        x = self.net(x)
+
+        if exists(self.downsample):
+            x = self.downsample(x)
+
+        x = (x + res) * (1 / math.sqrt(2))
+        return x
+
+class Discriminator(Module):
+    @beartype
+    def __init__(
+        self,
+        *,
+        dim,
+        image_size,
+        channels = 3,
+        attn_res_layers: Tuple[int, ...] = (16,),
+        max_dim = 512
+    ):
+        super().__init__()
+        image_size = pair(image_size)
+        min_image_resolution = min(image_size)
+
+        num_layers = int(math.log2(min_image_resolution) - 2)
+        attn_res_layers = cast_tuple(attn_res_layers, num_layers)
+
+        blocks = []
+
+        layer_dims = [channels] + [(dim * 4) * (2 ** i) for i in range(num_layers + 1)]
+        layer_dims = [min(layer_dim, max_dim) for layer_dim in layer_dims]
+        layer_dims_in_out = tuple(zip(layer_dims[:-1], layer_dims[1:]))
+
+        blocks = []
+        attn_blocks = []
+
+        image_resolution = min_image_resolution
+
+        for ind, (in_chan, out_chan) in enumerate(layer_dims_in_out):
+            num_layer = ind + 1
+            is_not_last = ind != (len(layer_dims_in_out) - 1)
+
+            block = DiscriminatorBlock(in_chan, out_chan, downsample = is_not_last)
+            blocks.append(block)
+
+            image_resolution //= 2
+
+        self.blocks = ModuleList(blocks)
+
+        dim_last = layer_dims[-1]
+
+        downsample_factor = 2 ** num_layers
+        last_fmap_size = tuple(map(lambda n: n // downsample_factor, image_size))
+
+        latent_dim = last_fmap_size[0] * last_fmap_size[1] * dim_last
+
+        self.to_logits = Sequential(
+            nn.Conv2d(dim_last, dim_last, 3, padding = 1),
+            leaky_relu(),
+            Rearrange('b ... -> b (...)'),
+            nn.Linear(latent_dim, 1),
+            Rearrange('b 1 -> b')
+        )
+
+    def forward(self, x):
+
+        for block in self.blocks:
+            x = block(x)
+
+        return self.to_logits(x)
 
 # adaptive conv from Karras et al. Stylegan2
 # for conditioning on latents

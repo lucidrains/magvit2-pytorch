@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'magvit2-pytorch',
   packages = find_packages(),
-  version = '0.0.6',
+  version = '0.0.7',
   license='MIT',
   description = 'MagViT2 - Pytorch',
   long_description_content_type = 'text/markdown',
@@ -20,6 +20,7 @@ setup(
   install_requires=[
     'beartype',
     'einops>=0.7.0',
+    'kornia',
     'vector-quantize-pytorch>=1.9.10',
     'torch',
     'torchvision'
