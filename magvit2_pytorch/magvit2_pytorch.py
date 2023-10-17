@@ -29,7 +29,7 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
-def identity(t):
+def identity(t, *args, **kwargs):
     return t
 
 def divisible_by(num, den):
@@ -306,15 +306,14 @@ class SpatialDownsample2x(Module):
     ):
         super().__init__()
         dim_out = default(dim_out, dim)
-        self.maybe_blur = Blur() if antialias else None
+        self.maybe_blur = Blur() if antialias else identity
         self.conv = nn.Conv2d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
 
     def forward(self, x):
         x = rearrange(x, 'b c t h w -> b t c h w')
         x, ps = pack_one(x, '* c h w')
 
-        if exists(self.maybe_blur):
-            x = self.maybe_blur(x, space_only = True)
+        x = self.maybe_blur(x, space_only = True)
 
         out = self.conv(x)
 
@@ -332,15 +331,14 @@ class TimeDownsample2x(Module):
     ):
         super().__init__()
         dim_out = default(dim_out, dim)
-        self.maybe_blur = Blur() if antialias else None
+        self.maybe_blur = Blur() if antialias else identity
         self.conv = nn.Conv1d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
 
     def forward(self, x):
         x = rearrange(x, 'b c t h w -> b h w c t')
         x, ps = pack_one(x, '* c t')
 
-        if exists(self.maybe_blur):
-            x = self.maybe_blur(x, time_only = True)
+        x = self.maybe_blur(x, time_only = True)
 
         out = self.conv(x)
 
