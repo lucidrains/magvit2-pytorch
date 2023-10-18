@@ -169,14 +169,25 @@ class Blur(Module):
             f = einsum('i, j, k -> i j k', f, f, f)
             f = rearrange(f, '... -> 1 ...')
 
-        return filter3d(x, f, normalized = True)
+        is_images = x.ndim == 4
+
+        if is_images:
+            x = rearrange(x, 'b c h w -> b c 1 h w')
+
+        out = filter3d(x, f, normalized = True)
+
+        if is_images:
+            out = rearrange(out, 'b c 1 h w -> b c h w')
+
+        return out
 
 class DiscriminatorBlock(Module):
     def __init__(
         self,
         input_channels,
         filters,
-        downsample = True
+        downsample = True,
+        antialiased_downsample = True
     ):
         super().__init__()
         self.conv_res = nn.Conv2d(input_channels, filters, 1, stride = (2 if downsample else 1))
@@ -188,6 +199,8 @@ class DiscriminatorBlock(Module):
             leaky_relu()
         )
 
+        self.maybe_blur = Blur() if antialiased_downsample else None
+
         self.downsample = nn.Sequential(
             Rearrange('b c (h p1) (w p2) -> b (c p1 p2) h w', p1 = 2, p2 = 2),
             nn.Conv2d(filters * 4, filters, 1)
@@ -195,9 +208,13 @@ class DiscriminatorBlock(Module):
 
     def forward(self, x):
         res = self.conv_res(x)
+
         x = self.net(x)
 
         if exists(self.downsample):
+            if exists(self.maybe_blur):
+                x = self.maybe_blur(x, space_only = True)
+
             x = self.downsample(x)
 
         x = (x + res) * (2 ** -0.5)
@@ -211,7 +228,8 @@ class Discriminator(Module):
         dim,
         image_size,
         channels = 3,
-        max_dim = 512
+        max_dim = 512,
+        antialiased_downsample = True
     ):
         super().__init__()
         image_size = pair(image_size)
@@ -234,7 +252,13 @@ class Discriminator(Module):
             num_layer = ind + 1
             is_not_last = ind != (len(layer_dims_in_out) - 1)
 
-            block = DiscriminatorBlock(in_chan, out_chan, downsample = is_not_last)
+            block = DiscriminatorBlock(
+                in_chan,
+                out_chan,
+                downsample = is_not_last,
+                antialiased_downsample = antialiased_downsample
+            )
+
             blocks.append(block)
 
             image_resolution //= 2
