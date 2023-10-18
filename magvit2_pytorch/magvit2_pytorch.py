@@ -69,7 +69,7 @@ def pick_video_frame(video, frame_indices):
 
 # gan related
 
-def gradient_penalty(images, output, weight = 10):
+def gradient_penalty(images, output):
     batch_size = images.shape[0]
 
     gradients = torch_grad(
@@ -82,7 +82,7 @@ def gradient_penalty(images, output, weight = 10):
     )[0]
 
     gradients = rearrange(gradients, 'b ... -> b (...)')
-    return weight * ((gradients.norm(2, dim = 1) - 1) ** 2).mean()
+    return ((gradients.norm(2, dim = 1) - 1) ** 2).mean()
 
 def leaky_relu(p = 0.1):
     return nn.LeakyReLU(p)
@@ -93,7 +93,11 @@ def hinge_discr_loss(fake, real):
 def hinge_gen_loss(fake):
     return -fake.mean()
 
-def grad_layer_wrt_loss(loss, layer):
+@beartype
+def grad_layer_wrt_loss(
+    loss: Tensor,
+    layer: nn.Parameter
+):
     return torch_grad(
         outputs = loss,
         inputs = layer,
@@ -130,7 +134,8 @@ def Sequential(*modules):
     return nn.Sequential(*modules)
 
 class Residual(Module):
-    def __init__(self, fn):
+    @beartype
+    def __init__(self, fn: Module):
         super().__init__()
         self.fn = fn
 
@@ -552,7 +557,8 @@ class CausalConvTranspose3d(Module):
 LossBreakdown = namedtuple('LossBreakdown', [
     'recon_loss',
     'lfq_aux_losses',
-    'perceptual_loss'
+    'perceptual_loss',
+    'gen_loss'
 ])
 
 DiscrLossBreakdown = namedtuple('DiscrLossBreakdown', [
@@ -586,7 +592,8 @@ class VideoTokenizer(Module):
         antialiased_downsample = True,
         discr_kwargs: Optional[dict] = None,
         use_gan = True,
-        adversarial_loss_weight = 1.
+        adversarial_loss_weight = 1.,
+        grad_penalty_loss_weight = 10.
     ):
         super().__init__()
 
@@ -674,6 +681,8 @@ class VideoTokenizer(Module):
         self.discr = Discriminator(**discr_kwargs)
 
         self.adversarial_loss_weight = adversarial_loss_weight
+        self.grad_penalty_loss_weight = grad_penalty_loss_weight
+
         self.has_gan = use_gan and adversarial_loss_weight > 0.
 
     def copy_for_eval(self):
@@ -781,6 +790,7 @@ class VideoTokenizer(Module):
         # gan discriminator loss
 
         if return_discr_loss:
+            assert self.has_gan
             assert exists(self.discr)
 
             frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
@@ -802,7 +812,7 @@ class VideoTokenizer(Module):
             else:
                 gradient_penalty_loss = self.zero
 
-            total_loss = discr_loss + gradient_penalty_loss
+            total_loss = discr_loss + gradient_penalty_loss * self.grad_penalty_loss_weight
 
             return total_loss, DiscrLossBreakdown(discr_loss, gradient_penalty_loss)
 
@@ -821,9 +831,30 @@ class VideoTokenizer(Module):
         else:
             perceptual_loss = self.zero
 
-        total_loss = recon_loss + aux_losses + perceptual_loss * self.perceptual_loss_weight
+        if self.has_gan:
+            frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
+            recon_video_frames = pick_video_frame(recon_video, frame_indices)
 
-        return total_loss, LossBreakdown(recon_loss, aux_losses, perceptual_loss)
+            fake_logits = self.discr(recon_video_frames)
+            gen_loss = hinge_gen_loss(fake_logits)
+
+            last_dec_layer = self.conv_out.conv.weight
+
+            norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
+            norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)
+
+            adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
+            adaptive_weight.clamp_(max = 1e4)
+        else:
+            gen_loss = self.zero
+            adaptive_weight = 0.
+
+        total_loss = recon_loss \
+            + aux_losses \
+            + perceptual_loss * self.perceptual_loss_weight \
+            + gen_loss * adaptive_weight
+
+        return total_loss, LossBreakdown(recon_loss, aux_losses, perceptual_loss, gen_loss)
 
 # main class
 
