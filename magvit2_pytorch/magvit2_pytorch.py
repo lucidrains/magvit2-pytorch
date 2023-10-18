@@ -876,7 +876,7 @@ class VideoTokenizer(Module):
         total_loss = recon_loss \
             + aux_losses \
             + perceptual_loss * self.perceptual_loss_weight \
-            + gen_loss * adaptive_weight
+            + gen_loss * adaptive_weight * self.adversarial_loss_weight
 
         return total_loss, LossBreakdown(recon_loss, aux_losses, perceptual_loss, gen_loss)
 
