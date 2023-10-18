@@ -52,6 +52,7 @@ codes = tokenizer(videos, return_codes = True)
     - [ ] implement the blurpool for antialiasing in discriminator
     - [ ] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
     - [ ] add trainer and manage discriminator training
+    - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
 
 - [ ] MaskGit
 
