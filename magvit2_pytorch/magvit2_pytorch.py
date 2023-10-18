@@ -1,11 +1,12 @@
 import copy
-from math import log2, ceil
+from math import log2, ceil, sqrt
 from functools import wraps
 
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum, Tensor
 from torch.nn import Module, ModuleList
+from torch.autograd import grad as torch_grad
 
 import torchvision
 
@@ -28,6 +29,9 @@ def exists(v):
 
 def default(v, d):
     return v if exists(v) else d
+
+def pair(t):
+    return t if isinstance(t, tuple) else (t, t)
 
 def identity(t, *args, **kwargs):
     return t
@@ -62,6 +66,40 @@ def pick_video_frame(video, frame_indices):
     images = video[batch_indices, frame_indices]
     images = rearrange(images, 'b 1 c ... -> b c ...')
     return images
+
+# gan related
+
+def gradient_penalty(images, output, weight = 10):
+    batch_size = images.shape[0]
+
+    gradients = torch_grad(
+        outputs = output,
+        inputs = images,
+        grad_outputs = torch.ones(output.size(), device = images.device),
+        create_graph = True,
+        retain_graph = True,
+        only_inputs = True
+    )[0]
+
+    gradients = rearrange(gradients, 'b ... -> b (...)')
+    return weight * ((gradients.norm(2, dim = 1) - 1) ** 2).mean()
+
+def leaky_relu(p = 0.1):
+    return nn.LeakyReLU(p)
+
+def hinge_discr_loss(fake, real):
+    return (F.relu(1 + fake) + F.relu(1 - real)).mean()
+
+def hinge_gen_loss(fake):
+    return -fake.mean()
+
+def grad_layer_wrt_loss(loss, layer):
+    return torch_grad(
+        outputs = loss,
+        inputs = layer,
+        grad_outputs = torch.ones_like(loss),
+        retain_graph = True
+    )[0].detach()
 
 # helper decorators
 
@@ -157,7 +195,7 @@ class DiscriminatorBlock(Module):
         if exists(self.downsample):
             x = self.downsample(x)
 
-        x = (x + res) * (1 / math.sqrt(2))
+        x = (x + res) * (2 ** -0.5)
         return x
 
 class Discriminator(Module):
@@ -168,15 +206,13 @@ class Discriminator(Module):
         dim,
         image_size,
         channels = 3,
-        attn_res_layers: Tuple[int, ...] = (16,),
         max_dim = 512
     ):
         super().__init__()
         image_size = pair(image_size)
         min_image_resolution = min(image_size)
 
-        num_layers = int(math.log2(min_image_resolution) - 2)
-        attn_res_layers = cast_tuple(attn_res_layers, num_layers)
+        num_layers = int(log2(min_image_resolution) - 2)
 
         blocks = []
 
@@ -310,10 +346,10 @@ class SpatialDownsample2x(Module):
         self.conv = nn.Conv2d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
 
     def forward(self, x):
+        x = self.maybe_blur(x, space_only = True)
+
         x = rearrange(x, 'b c t h w -> b t c h w')
         x, ps = pack_one(x, '* c h w')
-
-        x = self.maybe_blur(x, space_only = True)
 
         out = self.conv(x)
 
@@ -335,10 +371,10 @@ class TimeDownsample2x(Module):
         self.conv = nn.Conv1d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
 
     def forward(self, x):
+        x = self.maybe_blur(x, time_only = True)
+
         x = rearrange(x, 'b c t h w -> b h w c t')
         x, ps = pack_one(x, '* c t')
-
-        x = self.maybe_blur(x, time_only = True)
 
         out = self.conv(x)
 
@@ -519,10 +555,16 @@ LossBreakdown = namedtuple('LossBreakdown', [
     'perceptual_loss'
 ])
 
+DiscrLossBreakdown = namedtuple('DiscrLossBreakdown', [
+    'discr_loss',
+    'gradient_penalty'
+])
+
 class VideoTokenizer(Module):
     @beartype
     def __init__(
         self,
+        image_size,
         layers: Tuple[Tuple[str, int], ...] = (
             ('residual', 64),
             ('residual', 64),
@@ -541,10 +583,14 @@ class VideoTokenizer(Module):
         lfq_diversity_gamma = 1.,
         vgg: Optional[Module] = None,
         perceptual_loss_weight = 1.,
-        antialiased_downsample = True
-
+        antialiased_downsample = True,
+        discr_kwargs: Optional[dict] = None,
+        use_gan = True,
+        adversarial_loss_weight = 1.
     ):
         super().__init__()
+
+        self.image_size = image_size
 
         # encoder
 
@@ -617,6 +663,19 @@ class VideoTokenizer(Module):
 
         self.use_vgg = use_vgg
 
+        # discriminator
+
+        discr_kwargs = default(discr_kwargs, dict(
+            dim = dim,
+            image_size = image_size,
+            max_dim = 512
+        ))
+
+        self.discr = Discriminator(**discr_kwargs)
+
+        self.adversarial_loss_weight = adversarial_loss_weight
+        self.has_gan = use_gan and adversarial_loss_weight > 0.
+
     def copy_for_eval(self):
         device = next(self.parameters()).device
         vae_copy = copy.deepcopy(self.cpu())
@@ -671,10 +730,14 @@ class VideoTokenizer(Module):
         self,
         video_or_images: Tensor,
         return_loss = False,
-        return_codes = False
+        return_codes = False,
+        return_discr_loss = False,
+        apply_gradient_penalty = True
     ):
-        assert not (return_loss and return_codes)
+        assert (return_loss + return_codes + return_discr_loss) <= 1
         assert video_or_images.ndim in {4, 5}
+
+        assert video_or_images.shape[-2:] == (self.image_size, self.image_size)
 
         # accept images for image pretraining (curriculum learning from images to video)
 
@@ -710,10 +773,38 @@ class VideoTokenizer(Module):
 
         # reconstruction loss
 
-        if not return_loss:
+        if not (return_loss or return_discr_loss):
             return recon_video
 
         recon_loss = F.mse_loss(video, recon_video)
+
+        # gan discriminator loss
+
+        if return_discr_loss:
+            assert exists(self.discr)
+
+            frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
+
+            real = pick_video_frame(video, frame_indices)
+
+            if apply_gradient_penalty:
+                real = real.requires_grad_()
+
+            fake = pick_video_frame(recon_video, frame_indices)
+
+            real_logits = self.discr(real)
+            fake_logits = self.discr(fake)
+
+            discr_loss = hinge_discr_loss(fake_logits, real_logits)
+
+            if apply_gradient_penalty:
+                gradient_penalty_loss = gradient_penalty(real, real_logits)
+            else:
+                gradient_penalty_loss = self.zero
+
+            total_loss = discr_loss + gradient_penalty_loss
+
+            return total_loss, DiscrLossBreakdown(discr_loss, gradient_penalty_loss)
 
         # perceptual loss
 
