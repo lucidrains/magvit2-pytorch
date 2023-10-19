@@ -9,6 +9,7 @@ from torch.nn import Module, ModuleList
 from torch.autograd import grad as torch_grad
 
 import torchvision
+from torchvision.models import VGG16_Weights
 
 from collections import namedtuple
 
@@ -210,6 +211,14 @@ class TimeAttention(Attention):
 
         x = unpack_one(x, batch_ps, '* t c')
         return rearrange(x, 'b h w t c -> b c t h w')
+
+def FeedForward(dim, mult = 4):
+    dim_inner = dim * mult
+    return Sequential(
+        nn.Conv3d(dim, dim_inner, 1),
+        nn.GELU(),
+        nn.Conv3d(dim_inner, dim, 1)
+    )
 
 # discriminator with anti-aliased downsampling (blurpool Zhang et al.)
 
@@ -691,6 +700,7 @@ class VideoTokenizer(Module):
         attn_heads = 8,
         attn_dropout = 0.,
         vgg: Optional[Module] = None,
+        vgg_weights: VGG16_Weights = VGG16_Weights.DEFAULT,
         perceptual_loss_weight = 1.,
         antialiased_downsample = True,
         discr_kwargs: Optional[dict] = None,
@@ -744,8 +754,15 @@ class VideoTokenizer(Module):
                     flash = flash_attn
                 )
 
-                encoder_layer = Residual(SpaceAttention(**attn_kwargs))
-                decoder_layer = Residual(SpaceAttention(**attn_kwargs))
+                encoder_layer = Sequential(
+                    Residual(SpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
+
+                decoder_layer = Sequential(
+                    Residual(SpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
 
             elif layer_type == 'attend_time':
                 attn_kwargs = dict(
@@ -757,8 +774,15 @@ class VideoTokenizer(Module):
                     flash = flash_attn
                 )
 
-                encoder_layer = Residual(TimeAttention(**attn_kwargs))
-                decoder_layer = Residual(TimeAttention(**attn_kwargs))
+                encoder_layer = Sequential(
+                    Residual(TimeAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
+
+                decoder_layer = Sequential(
+                    Residual(TimeAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
 
             else:
                 raise ValueError(f'unknown layer type {layer_type}')
@@ -798,8 +822,11 @@ class VideoTokenizer(Module):
 
         if use_vgg:
             if not exists(vgg):
-                vgg = torchvision.models.vgg16(pretrained = True)
-                vgg.classifier = nn.Sequential(*vgg.classifier[:-2])
+                vgg = torchvision.models.vgg16(
+                    weights = vgg_weights
+                )
+
+                vgg.classifier = Sequential(*vgg.classifier[:-2])
 
             self.vgg = vgg
 
