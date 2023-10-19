@@ -611,6 +611,7 @@ class VideoTokenizer(Module):
         lfq_entropy_loss_weight = 0.1,
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 1.,
+        lfq_aux_loss_weight = 1.,
         vgg: Optional[Module] = None,
         perceptual_loss_weight = 1.,
         antialiased_downsample = True,
@@ -673,6 +674,8 @@ class VideoTokenizer(Module):
             commitment_loss_weight = lfq_commitment_loss_weight,
             diversity_gamma = lfq_diversity_gamma
         )
+
+        self.lfq_aux_loss_weight = lfq_aux_loss_weight
 
         # dummy loss
 
@@ -874,7 +877,7 @@ class VideoTokenizer(Module):
             adaptive_weight = 0.
 
         total_loss = recon_loss \
-            + aux_losses \
+            + aux_losses * self.lfq_aux_loss_weight \
             + perceptual_loss * self.perceptual_loss_weight \
             + gen_loss * adaptive_weight * self.adversarial_loss_weight
 
