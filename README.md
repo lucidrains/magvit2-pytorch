@@ -19,6 +19,7 @@ import torch
 from magvit2_pytorch.magvit2_pytorch import VideoTokenizer
 
 tokenizer = VideoTokenizer(
+    image_size = 256,
     init_dim = 64,
     layers = (
         ('residual', 64),
@@ -50,7 +51,7 @@ codes = tokenizer(videos, return_codes = True)
 - [ ] Magvit2 Tokenizer
     - [x] add adversarial loss
     - [x] implement the blurpool for antialiasing in discriminator
-    - [ ] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
+    - [x] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
     - [ ] add trainer and manage discriminator training
     - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
     - [ ] add local attention; even if not in the paper, i've seen too much not to use it

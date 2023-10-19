@@ -580,7 +580,10 @@ class CausalConvTranspose3d(Module):
 
 LossBreakdown = namedtuple('LossBreakdown', [
     'recon_loss',
-    'lfq_aux_losses',
+    'lfq_aux_loss',
+    'lfq_per_sample_entropy_loss',
+    'lfq_batch_entropy_loss',
+    'lfq_commitment_loss',
     'perceptual_loss',
     'gen_loss'
 ])
@@ -796,7 +799,7 @@ class VideoTokenizer(Module):
 
         # lookup free quantization
 
-        quantized, codes, aux_losses = self.quantizers(x)
+        (quantized, codes, aux_losses), lfq_loss_breakdown = self.quantizers(x, return_loss_breakdown = True)
 
         if return_codes:
             return codes
@@ -881,7 +884,7 @@ class VideoTokenizer(Module):
             + perceptual_loss * self.perceptual_loss_weight \
             + gen_loss * adaptive_weight * self.adversarial_loss_weight
 
-        return total_loss, LossBreakdown(recon_loss, aux_losses, perceptual_loss, gen_loss)
+        return total_loss, LossBreakdown(recon_loss, aux_losses, *lfq_loss_breakdown, perceptual_loss, gen_loss)
 
 # main class
 
