@@ -22,10 +22,10 @@ tokenizer = VideoTokenizer(
     image_size = 256,
     init_dim = 64,
     layers = (
-        ('residual', 64),
+        'residual',
         ('compress_space', 128),
-        ('residual', 128),
-        ('residual', 128),
+        'residual',
+        'residual',
         ('compress_time', 256),
     )
 )

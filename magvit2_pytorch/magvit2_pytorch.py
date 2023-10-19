@@ -598,10 +598,10 @@ class VideoTokenizer(Module):
     def __init__(
         self,
         image_size,
-        layers: Tuple[Tuple[str, int], ...] = (
-            ('residual', 64),
-            ('residual', 64),
-            ('residual', 64)
+        layers: Tuple[Union[str, Tuple[str, int]], ...] = (
+            'residual',
+            'residual',
+            'residual'
         ),
         residual_conv_kernel_size = 3,
         num_codebooks = 1,
@@ -639,18 +639,21 @@ class VideoTokenizer(Module):
         dim = init_dim
         time_downsample_factor = 1
 
-        for layer_type, dim_out in layers:
-            if layer_type == 'residual':
-                assert dim == dim_out
+        for layer_def in layers:
+            layer_type, *layer_params = cast_tuple(layer_def)
 
+            if layer_type == 'residual':
                 encoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
                 decoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
+                dim_out = dim
 
             elif layer_type == 'compress_space':
+                dim_out, = layer_params
                 encoder_layer = SpatialDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = SpatialUpsample2x(dim_out, dim)
 
             elif layer_type == 'compress_time':
+                dim_out, = layer_params
                 encoder_layer = TimeDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = TimeUpsample2x(dim_out, dim)
 
