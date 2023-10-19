@@ -367,6 +367,7 @@ class Conv3DMod(Module):
         *,
         spatial_kernel,
         time_kernel,
+        causal = True,
         dim_out = None,
         demod = True,
         eps = 1e-8,
@@ -381,7 +382,9 @@ class Conv3DMod(Module):
         self.spatial_kernel = spatial_kernel
         self.time_kernel = time_kernel
 
-        self.padding = (*((spatial_kernel // 2,) * 4), time_kernel - 1, 0)
+        time_padding = (time_kernel - 1, 0) if causal else ((time_kernel // 2,) * 2)
+
+        self.padding = (*((spatial_kernel // 2,) * 4), *time_padding)
         self.weights = nn.Parameter(torch.randn((dim_out, dim, time_kernel, spatial_kernel, spatial_kernel)))
 
         self.demod = demod
