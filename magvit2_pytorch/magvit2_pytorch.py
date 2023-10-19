@@ -784,7 +784,7 @@ class VideoTokenizer(Module):
         # accept images for image pretraining (curriculum learning from images to video)
 
         if video_or_images.ndim == 4:
-            video = rearrange(video, 'b c ... -> b c 1 ...')
+            video = rearrange(video_or_images, 'b c ... -> b c 1 ...')
         else:
             video = video_or_images
 
