@@ -26,7 +26,9 @@ tokenizer = VideoTokenizer(
         ('compress_space', 128),
         'residual',
         'residual',
+        'attend_space',
         ('compress_time', 256),
+        'attend_time'
     )
 )
 

@@ -20,6 +20,8 @@ from einops.layers.torch import Rearrange
 from beartype import beartype
 from beartype.typing import Union, Tuple, Optional
 
+from magvit2_pytorch.attend import Attend
+
 from kornia.filters import filter3d
 
 # helper
@@ -141,6 +143,73 @@ class Residual(Module):
 
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
+
+# attention
+
+class Attention(Module):
+    def __init__(
+        self,
+        *,
+        dim,
+        causal = False,
+        dim_head = 32,
+        heads = 8,
+        flash = False,
+        dropout = 0.,
+        num_memory_kv = 4
+    ):
+        super().__init__()
+        dim_inner = dim_head * heads
+        self.to_qkv = nn.Sequential(
+            nn.Linear(dim, dim_inner * 3, bias = False),
+            Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = heads)
+        )
+
+        assert num_memory_kv > 0
+        self.mem_kv = nn.Parameter(torch.randn(2, heads, num_memory_kv, dim_head))
+
+        self.attend = Attend(
+            causal = causal,
+            dropout = dropout,
+            flash = flash
+        )
+
+        self.to_out = nn.Sequential(
+            Rearrange('b h n d -> b n (h d)'),
+            nn.Linear(dim_inner, dim, bias = False)
+        )
+
+    def forward(self, x, mask = None):
+        q, k, v = self.to_qkv(x)
+
+        mk, mv = map(lambda t: repeat(t, 'h n d -> b h n d', b = q.shape[0]), self.mem_kv)
+        k = torch.cat((mk, k), dim = -2)
+        v = torch.cat((mv, v), dim = -2)
+
+        out = self.attend(q, k, v, mask = mask)
+        return self.to_out(out)
+
+class SpaceAttention(Attention):
+    def forward(self, x, *args, **kwargs):
+        x = rearrange(x, 'b c t h w -> b t h w c')
+        x, batch_ps = pack_one(x, '* h w c')
+        x, seq_ps = pack_one(x, 'b * c')
+
+        x = super().forward(x, *args, **kwargs)
+
+        x = unpack_one(x, seq_ps, 'b * c')
+        x = unpack_one(x, batch_ps, '* h w c')
+        return rearrange(x, 'b t h w c -> b c t h w')
+
+class TimeAttention(Attention):
+    def forward(self, x, *args, **kwargs):
+        x = rearrange(x, 'b c t h w -> b h w t c')
+        x, batch_ps = pack_one(x, '* t c')
+
+        x = super().forward(x, *args, **kwargs)
+
+        x = unpack_one(x, batch_ps, '* t c')
+        return rearrange(x, 'b h w t c -> b c t h w')
 
 # discriminator with anti-aliased downsampling (blurpool Zhang et al.)
 
@@ -287,10 +356,10 @@ class Discriminator(Module):
 
         return self.to_logits(x)
 
-# adaptive conv from Karras et al. Stylegan2
+# modulatable conv from Karras et al. Stylegan2
 # for conditioning on latents
 
-class AdaptiveConv3DMod(Module):
+class Conv3DMod(Module):
     @beartype
     def __init__(
         self,
@@ -615,13 +684,17 @@ class VideoTokenizer(Module):
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 1.,
         lfq_aux_loss_weight = 1.,
+        attn_dim_head = 32,
+        attn_heads = 8,
+        attn_dropout = 0.,
         vgg: Optional[Module] = None,
         perceptual_loss_weight = 1.,
         antialiased_downsample = True,
         discr_kwargs: Optional[dict] = None,
         use_gan = True,
         adversarial_loss_weight = 1.,
-        grad_penalty_loss_weight = 10.
+        grad_penalty_loss_weight = 10.,
+        flash_attn = True
     ):
         super().__init__()
 
@@ -658,6 +731,32 @@ class VideoTokenizer(Module):
                 decoder_layer = TimeUpsample2x(dim_out, dim)
 
                 time_downsample_factor *= 2
+
+            elif layer_type == 'attend_space':
+                attn_kwargs = dict(
+                    dim = dim,
+                    dim_head = attn_dim_head,
+                    heads = attn_heads,
+                    dropout = attn_dropout,
+                    flash = flash_attn
+                )
+
+                encoder_layer = Residual(SpaceAttention(**attn_kwargs))
+                decoder_layer = Residual(SpaceAttention(**attn_kwargs))
+
+            elif layer_type == 'attend_time':
+                attn_kwargs = dict(
+                    dim = dim,
+                    dim_head = attn_dim_head,
+                    heads = attn_heads,
+                    dropout = attn_dropout,
+                    causal = True,
+                    flash = flash_attn
+                )
+
+                encoder_layer = Residual(TimeAttention(**attn_kwargs))
+                decoder_layer = Residual(TimeAttention(**attn_kwargs))
+
             else:
                 raise ValueError(f'unknown layer type {layer_type}')
 
