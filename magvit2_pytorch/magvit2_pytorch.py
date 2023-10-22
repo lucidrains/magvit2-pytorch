@@ -159,6 +159,23 @@ class TokenShift(Module):
         x = torch.cat((x, x_shift), dim = 1)
         return self.fn(x, **kwargs)
 
+# rmsnorm
+
+class RMSNorm(Module):
+    def __init__(
+        self,
+        dim,
+        channel_first = False
+    ):
+        super().__init__()
+        shape = (dim, 1, 1, 1) if channel_first else (dim,)
+        self.channel_first = channel_first
+        self.scale = dim ** 0.5
+        self.gamma = nn.Parameter(torch.ones(shape))
+
+    def forward(self, x):
+        return F.normalize(x, dim = (1 if self.channel_first else -1)) * self.scale * self.gamma
+
 # attention
 
 class Attention(Module):
@@ -176,6 +193,7 @@ class Attention(Module):
         super().__init__()
         dim_inner = dim_head * heads
         self.to_qkv = nn.Sequential(
+            RMSNorm(dim),
             nn.Linear(dim, dim_inner * 3, bias = False),
             Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = heads)
         )
@@ -229,8 +247,10 @@ class TimeAttention(Attention):
 def FeedForward(dim, mult = 4):
     dim_inner = dim * mult
     return Sequential(
+        RMSNorm(dim, channel_first = True),
         nn.Conv3d(dim, dim_inner, 1),
         nn.GELU(),
+        RMSNorm(dim_inner, channel_first = True),
         nn.Conv3d(dim_inner, dim, 1)
     )
 

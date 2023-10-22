@@ -98,3 +98,14 @@ codes = tokenizer(videos, return_codes = True)
     year    = {2021}
 }
 ```
+
+```
+@article{Shleifer2021NormFormerIT,
+  title     = {NormFormer: Improved Transformer Pretraining with Extra Normalization},
+  author    = {Sam Shleifer and Jason Weston and Myle Ott},
+  journal   = {ArXiv},
+  year      = {2021},
+  volume    = {abs/2110.09456},
+  url       = {https://api.semanticscholar.org/CorpusID:239016890}
+}
+```
