@@ -2,7 +2,7 @@
 
 ## MagViT2 - Pytorch (wip)
 
-Implementation of MagViT2 from <a href="https://arxiv.org/abs/2310.05737">Language Model Beats Diffusion - Tokenizer is Key to Visual Generation</a> in Pytorch
+Implementation of MagViT2 from <a href="https://arxiv.org/abs/2310.05737">Language Model Beats Diffusion - Tokenizer is Key to Visual Generation</a> in Pytorch. This currently holds SOTA for video generation / understanding.
 
 The Lookup Free Quantizer proposed in the paper can be found in a <a href="https://github.com/lucidrains/vector-quantize-pytorch/blob/master/vector_quantize_pytorch/lookup_free_quantization.py">separate repository</a>. It should probably be explored for all other modalities, starting with <a href="https://github.com/lucidrains/audiolm-pytorch/commit/c748fcdb565964bc562277bd73fbeb2e5df0ffca">audio</a>
 
@@ -99,7 +99,7 @@ codes = tokenizer(videos, return_codes = True)
 }
 ```
 
-```
+```bibtex
 @article{Shleifer2021NormFormerIT,
   title     = {NormFormer: Improved Transformer Pretraining with Extra Normalization},
   author    = {Sam Shleifer and Jason Weston and Myle Ott},
