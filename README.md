@@ -62,7 +62,9 @@ codes = tokenizer(videos, return_codes = True)
     - [x] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
     - [ ] add trainer and manage discriminator training
     - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
-    - [ ] add local attention; even if not in the paper, i've seen too much not to use it
+    - [ ] add attention
+        - [ ] use axial rotary embeddings for spatial
+    - [ ] add an optional autoregressive loss at some penultimate layer of the decoder
 
 - [ ] MaskGit
 
