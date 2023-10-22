@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'magvit2-pytorch',
   packages = find_packages(),
-  version = '0.0.22',
+  version = '0.0.23',
   license='MIT',
   description = 'MagViT2 - Pytorch',
   long_description_content_type = 'text/markdown',

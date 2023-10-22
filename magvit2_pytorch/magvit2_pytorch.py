@@ -394,6 +394,7 @@ class Conv3DMod(Module):
         dim_out = None,
         demod = True,
         eps = 1e-8,
+        pad_mode = 'constant'
     ):
         super().__init__()
         dim_out = default(dim_out, dim)
@@ -407,6 +408,7 @@ class Conv3DMod(Module):
 
         time_padding = (time_kernel - 1, 0) if causal else ((time_kernel // 2,) * 2)
 
+        self.pad_mode = pad_mode
         self.padding = (*((spatial_kernel // 2,) * 4), *time_padding)
         self.weights = nn.Parameter(torch.randn((dim_out, dim, time_kernel, spatial_kernel, spatial_kernel)))
 
@@ -449,7 +451,7 @@ class Conv3DMod(Module):
 
         weights = rearrange(weights, 'b o ... -> (b o) ...')
 
-        fmap = F.pad(fmap, self.padding)
+        fmap = F.pad(fmap, self.padding, mode = self.pad_mode)
         fmap = F.conv3d(fmap, weights, groups = b)
 
         return rearrange(fmap, '1 (b o) ... -> b o ...', b = b)
@@ -631,9 +633,46 @@ def ResidualUnit(
     return Residual(Sequential(
         CausalConv3d(dim, dim, kernel_size, pad_mode = pad_mode),
         nn.ELU(),
-        CausalConv3d(dim, dim, 1, pad_mode = pad_mode),
+        nn.Conv3d(dim, dim, 1),
         nn.ELU()
     ))
+
+@beartype
+class ResidualUnitMod(Module):
+    def __init__(
+        self,
+        dim,
+        kernel_size: Union[int, Tuple[int, int, int]],
+        pad_mode: str = 'reflect',
+        demod = True
+    ):
+        super().__init__()
+        kernel_size = cast_tuple(kernel_size, 3)
+        time_kernel_size, height_kernel_size, width_kernel_size = kernel_size
+        assert height_kernel_size == width_kernel_size
+
+        self.conv = Conv3DMod(
+            dim = dim,
+            spatial_kernel = height_kernel_size,
+            time_kernel = time_kernel_size,
+            causal = True,
+            demod = demod,
+            pad_mode = pad_mode
+        )
+
+        self.conv_out = nn.Conv3d(dim, dim, 1)
+
+    def forward(
+        self,
+        x,
+        mod: Optional[Tensor] = None
+    ):
+        res = x
+        x = self.conv(x, mod = mod)
+        x = F.elu(x)
+        x = self.conv_out(x)
+        x = F.elu(x)
+        return x + res
 
 class CausalConvTranspose3d(Module):
     def __init__(
