@@ -18,6 +18,7 @@ setup(
     'generative video model'
   ],
   install_requires=[
+    'accelerate',
     'beartype',
     'einops>=0.7.0',
     'kornia',
