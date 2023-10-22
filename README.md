@@ -64,7 +64,7 @@ codes = tokenizer(videos, return_codes = True)
     - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
     - [ ] add attention
         - [ ] use axial rotary embeddings for spatial
-    - [ ] add an optional autoregressive loss at some penultimate layer of the decoder
+    - [ ] add an optional autoregressive loss at some penultimate layer of the decoder - check literature to see if anyone else has done this unification of transformer decoder + tokenizer in one architecture
 
 - [ ] MaskGit
 
