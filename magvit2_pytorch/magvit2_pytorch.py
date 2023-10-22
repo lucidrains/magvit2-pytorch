@@ -145,6 +145,20 @@ class Residual(Module):
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
 
+# token shifting
+
+class TokenShift(Module):
+    @beartype
+    def __init__(self, fn: Module):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x, **kwargs):
+        x, x_shift = x.chunk(2, dim = 1)
+        x_shift = pad_at_dim(x_shift, (1, -1), dim = 2) # shift time dimension
+        x = torch.cat((x, x_shift), dim = 1)
+        return self.fn(x, **kwargs)
+
 # attention
 
 class Attention(Module):
@@ -775,13 +789,13 @@ class VideoTokenizer(Module):
                 )
 
                 encoder_layer = Sequential(
-                    Residual(TimeAttention(**attn_kwargs)),
-                    Residual(FeedForward(dim))
+                    Residual(TokenShift(TimeAttention(**attn_kwargs))),
+                    Residual(TokenShift(FeedForward(dim)))
                 )
 
                 decoder_layer = Sequential(
-                    Residual(TimeAttention(**attn_kwargs)),
-                    Residual(FeedForward(dim))
+                    Residual(TokenShift(TimeAttention(**attn_kwargs))),
+                    Residual(TokenShift(FeedForward(dim)))
                 )
 
             else:
@@ -811,7 +825,7 @@ class VideoTokenizer(Module):
 
         # dummy loss
 
-        self.register_buffer('zero', torch.zeros(1,), persistent = False)
+        self.register_buffer('zero', torch.tensor(0.), persistent = False)
 
         # perceptual loss related
 
