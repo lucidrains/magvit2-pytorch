@@ -60,6 +60,8 @@ codes = tokenizer(videos, return_codes = True)
     - [x] add adversarial loss
     - [x] implement the blurpool for antialiasing in discriminator
     - [x] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
+    - [x] add conditioning for encoder decoder with residual modulatable conv 3d
+    - [ ] add adaptive rmsnorm
     - [ ] add trainer and manage discriminator training
     - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
     - [ ] add attention

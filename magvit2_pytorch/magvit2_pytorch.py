@@ -436,10 +436,11 @@ class Conv3DMod(Module):
 
         nn.init.kaiming_normal_(self.weights, a = 0, mode = 'fan_in', nonlinearity = 'selu')
 
+    @beartype
     def forward(
         self,
         fmap,
-        mod: Optional[Tensor] = None
+        cond: Tensor
     ):
         """
         notation
@@ -459,9 +460,9 @@ class Conv3DMod(Module):
 
         # do the modulation, demodulation, as done in stylegan2
 
-        mod = rearrange(mod, 'b i -> b 1 i 1 1 1')
+        cond = rearrange(cond, 'b i -> b 1 i 1 1 1')
 
-        weights = weights * (mod + 1)
+        weights = weights * (cond + 1)
 
         if self.demod:
             inv_norm = reduce(weights ** 2, 'b o i k0 k1 k2 -> b o 1 1 1 1', 'sum').clamp(min = self.eps).rsqrt()
@@ -663,13 +664,17 @@ class ResidualUnitMod(Module):
         self,
         dim,
         kernel_size: Union[int, Tuple[int, int, int]],
-        pad_mode: str = 'reflect',
+        *,
+        dim_cond,
+        pad_mode: str = 'constant',
         demod = True
     ):
         super().__init__()
         kernel_size = cast_tuple(kernel_size, 3)
         time_kernel_size, height_kernel_size, width_kernel_size = kernel_size
         assert height_kernel_size == width_kernel_size
+
+        self.to_cond = nn.Linear(dim_cond, dim)
 
         self.conv = Conv3DMod(
             dim = dim,
@@ -682,13 +687,16 @@ class ResidualUnitMod(Module):
 
         self.conv_out = nn.Conv3d(dim, dim, 1)
 
+    @beartype
     def forward(
         self,
         x,
-        mod: Optional[Tensor] = None
+        cond: Tensor,
     ):
         res = x
-        x = self.conv(x, mod = mod)
+        cond = self.to_cond(cond)
+
+        x = self.conv(x, cond = cond)
         x = F.elu(x)
         x = self.conv_out(x)
         x = F.elu(x)
@@ -762,6 +770,8 @@ class VideoTokenizer(Module):
         codebook_size = 8192,
         channels = 3,
         init_dim = 64,
+        dim_cond = None,
+        dim_cond_expansion_factor = 4.,
         input_conv_kernel_size: Tuple[int, int, int] = (7, 7, 7),
         output_conv_kernel_size: Tuple[int, int, int] = (3, 3, 3),
         pad_mode: str = 'reflect',
@@ -797,6 +807,7 @@ class VideoTokenizer(Module):
 
         dim = init_dim
         time_downsample_factor = 1
+        has_cond = False
 
         for layer_def in layers:
             layer_type, *layer_params = cast_tuple(layer_def)
@@ -805,6 +816,14 @@ class VideoTokenizer(Module):
                 encoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
                 decoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
                 dim_out = dim
+
+            elif layer_type == 'cond_residual':
+                assert exists(dim_cond), 'dim_cond must be passed into VideoTokenizer, if tokenizer is to be conditioned'
+
+                has_cond = True
+
+                encoder_layer = ResidualUnitMod(dim, residual_conv_kernel_size, dim_cond = int(dim_cond * dim_cond_expansion_factor))
+                decoder_layer = ResidualUnitMod(dim, residual_conv_kernel_size, dim_cond = int(dim_cond * dim_cond_expansion_factor))
 
             elif layer_type == 'compress_space':
                 dim_out, = layer_params
@@ -867,6 +886,23 @@ class VideoTokenizer(Module):
 
         self.time_downsample_factor = time_downsample_factor
         self.time_padding = time_downsample_factor - 1
+
+        # use a MLP stem for conditioning, if needed
+
+        self.has_cond = has_cond
+
+        if has_cond:
+            self.dim_cond = dim_cond
+
+            self.encoder_cond_in = Sequential(
+                nn.Linear(dim_cond, int(dim_cond * dim_cond_expansion_factor)),
+                nn.SiLU()
+            )
+
+            self.decoder_cond_in = Sequential(
+                nn.Linear(dim_cond, int(dim_cond * dim_cond_expansion_factor)),
+                nn.SiLU()
+            )
 
         # lookup free quantizer(s) - multiple codebooks is possible
         # each codebook will get its own entropy regularization
@@ -949,23 +985,75 @@ class VideoTokenizer(Module):
     def encode(
         self,
         video: Tensor,
-        quantize = False
+        quantize = False,
+        cond: Optional[Tensor] = None
     ):
+        # conditioning, if needed
+
+        assert (not self.has_cond) or exists(cond), '`cond` must be passed into tokenizer forward method since conditionable layers were specified'
+
+        if exists(cond):
+            assert cond.shape == (video.shape[0], self.dim_cond)
+
+            cond = self.encoder_cond_in(cond)
+            cond_kwargs = dict(cond = cond)
+
+        # initial conv
+
         x = self.conv_in(video)
 
+        # encoder layers
+
         for fn in self.encoder_layers:
-            x = fn(x)
+
+            layer_kwargs = dict()
+            if isinstance(fn, (ResidualUnitMod,)):
+                layer_kwargs = cond_kwargs
+
+            x = fn(x, **layer_kwargs)
 
         maybe_quantize = identity if not quantize else self.quantizers
 
         return maybe_quantize(x)
 
     @beartype
-    def decode(self, codes: Tensor):
+    def decode_from_code_indices(
+        self,
+        indices: Tensor,
+        cond: Optional[Tensor] = None
+    ):
+        codes = self.quantizers.get_output_from_indices(indices)
+        return self.decode(codes = codes, cond = cond)
+
+    @beartype
+    def decode(
+        self,
+        codes: Tensor,
+        cond: Optional[Tensor] = None
+    ):
+        # conditioning, if needed
+
+        assert (not self.has_cond) or exists(cond), '`cond` must be passed into tokenizer forward method since conditionable layers were specified'
+
+        if exists(cond):
+            assert cond.shape == (codes.shape[0], self.dim_cond)
+
+            cond = self.decoder_cond_in(cond)
+            cond_kwargs = dict(cond = cond)
+
+        # decoder layers
+
         x = codes
 
         for fn in self.decoder_layers:
-            x = fn(x)
+
+            layer_kwargs = dict()
+            if isinstance(fn, (ResidualUnitMod,)):
+                layer_kwargs = cond_kwargs
+
+            x = fn(x, **layer_kwargs)
+
+        # to pixels
 
         return self.conv_out(x)
 
@@ -973,6 +1061,7 @@ class VideoTokenizer(Module):
     def forward(
         self,
         video_or_images: Tensor,
+        cond: Optional[Tensor] = None,
         return_loss = False,
         return_codes = False,
         return_discr_loss = False,
@@ -1000,7 +1089,7 @@ class VideoTokenizer(Module):
 
         # encoder
 
-        x = self.encode(padded_video)
+        x = self.encode(padded_video, cond = cond)
 
         # lookup free quantization
 
@@ -1011,7 +1100,7 @@ class VideoTokenizer(Module):
 
         # decoder
 
-        padded_recon_video = self.decode(quantized)
+        padded_recon_video = self.decode(quantized, cond = cond)
 
         recon_video = padded_recon_video[:, :, self.time_padding:]
 
