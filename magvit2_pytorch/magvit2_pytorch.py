@@ -1112,31 +1112,34 @@ class VideoTokenizer(Module):
     @beartype
     def decode_from_code_indices(
         self,
-        indices: Tensor,
+        codes: Tensor,
         cond: Optional[Tensor] = None
     ):
-        codes = self.quantizers.get_output_from_indices(indices)
-        return self.decode(codes = codes, cond = cond)
+        quantized = self.quantizers.indices_to_codes(codes)
+        out = self.decode(quantized, cond = cond)
+        return out[:, :, self.time_padding:]
 
     @beartype
     def decode(
         self,
-        codes: Tensor,
+        quantized: Tensor,
         cond: Optional[Tensor] = None
     ):
+        batch = quantized.shape[0]
+
         # conditioning, if needed
 
         assert (not self.has_cond) or exists(cond), '`cond` must be passed into tokenizer forward method since conditionable layers were specified'
 
         if exists(cond):
-            assert cond.shape == (codes.shape[0], self.dim_cond)
+            assert cond.shape == (batch, self.dim_cond)
 
             cond = self.decoder_cond_in(cond)
             cond_kwargs = dict(cond = cond)
 
         # decoder layers
 
-        x = codes
+        x = quantized
 
         for fn in self.decoder_layers:
 
@@ -1157,6 +1160,7 @@ class VideoTokenizer(Module):
         cond: Optional[Tensor] = None,
         return_loss = False,
         return_codes = False,
+        return_recon = False,
         return_discr_loss = False,
         apply_gradient_penalty = True
     ):
@@ -1188,7 +1192,7 @@ class VideoTokenizer(Module):
 
         (quantized, codes, aux_losses), lfq_loss_breakdown = self.quantizers(x, return_loss_breakdown = True)
 
-        if return_codes:
+        if return_codes and not return_recon:
             return codes
 
         # decoder
@@ -1196,6 +1200,9 @@ class VideoTokenizer(Module):
         padded_recon_video = self.decode(quantized, cond = cond)
 
         recon_video = padded_recon_video[:, :, self.time_padding:]
+
+        if return_codes:
+            return recon_video, codes
 
         # reconstruction loss
 
