@@ -21,6 +21,7 @@ setup(
     'accelerate',
     'beartype',
     'einops>=0.7.0',
+    'ema-pytorch',
     'kornia',
     'vector-quantize-pytorch>=1.9.18',
     'torch',

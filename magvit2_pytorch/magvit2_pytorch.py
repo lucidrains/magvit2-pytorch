@@ -1036,6 +1036,19 @@ class VideoTokenizer(Module):
 
         self.has_gan = use_gan and adversarial_loss_weight > 0.
 
+    def parameters(self):
+        return [
+            *self.conv_in.parameters(),
+            *self.conv_out.parameters(),
+            *self.encoder_layers.parameters(),
+            *self.decoder_layers.parameters(),
+            *self.encoder_cond_in.parameters(),
+            *self.decoder_cond_in.parameters(),
+        ]
+
+    def discr_parameters(self):
+        return self.discr.parameters()
+
     def copy_for_eval(self):
         device = next(self.parameters()).device
         vae_copy = copy.deepcopy(self.cpu())
