@@ -1,6 +1,6 @@
 import copy
 from math import log2, ceil, sqrt
-from functools import wraps
+from functools import wraps, partial
 
 import torch
 import torch.nn.functional as F
@@ -168,10 +168,13 @@ class RMSNorm(Module):
     def __init__(
         self,
         dim,
-        channel_first = False
+        channel_first = False,
+        images = False
     ):
         super().__init__()
-        shape = (dim, 1, 1, 1) if channel_first else (dim,)
+        broadcastable_dims = (1, 1, 1) if not images else (1, 1)
+        shape = (dim, *broadcastable_dims) if channel_first else (dim,)
+
         self.channel_first = channel_first
         self.scale = dim ** 0.5
         self.gamma = nn.Parameter(torch.ones(shape))
@@ -273,7 +276,7 @@ class LinearAttention(Module):
 
 class LinearSpaceAttention(LinearAttention):
     def forward(self, x, *args, **kwargs):
-        x = rearrange(x, 'b c t h w -> b t h w c')
+        x = rearrange(x, 'b c ... h w -> b ... h w c')
         x, batch_ps = pack_one(x, '* h w c')
         x, seq_ps = pack_one(x, 'b * c')
 
@@ -281,7 +284,7 @@ class LinearSpaceAttention(LinearAttention):
 
         x = unpack_one(x, seq_ps, 'b * c')
         x = unpack_one(x, batch_ps, '* h w c')
-        return rearrange(x, 'b t h w c -> b c t h w')
+        return rearrange(x, 'b ... h w c -> b c ... h w')
 
 class SpaceAttention(Attention):
     def forward(self, x, *args, **kwargs):
@@ -305,14 +308,17 @@ class TimeAttention(Attention):
         x = unpack_one(x, batch_ps, '* t c')
         return rearrange(x, 'b h w t c -> b c t h w')
 
-def FeedForward(dim, mult = 4):
+def FeedForward(dim, mult = 4, images = False):
+    conv_klass = nn.Conv2d if images else nn.Conv3d
+    norm_klass = partial(RMSNorm, channel_first = True, images = images)
     dim_inner = dim * mult
+
     return Sequential(
-        RMSNorm(dim, channel_first = True),
-        nn.Conv3d(dim, dim_inner, 1),
+        norm_klass(dim, channel_first = True, images = images),
+        conv_klass(dim, dim_inner, 1),
         nn.GELU(),
-        RMSNorm(dim_inner, channel_first = True),
-        nn.Conv3d(dim_inner, dim, 1)
+        norm_klass(dim_inner, channel_first = True),
+        conv_klass(dim_inner, dim, 1)
     )
 
 # discriminator with anti-aliased downsampling (blurpool Zhang et al.)
@@ -402,6 +408,10 @@ class Discriminator(Module):
         image_size,
         channels = 3,
         max_dim = 512,
+        attn_heads = 8,
+        attn_dim_head = 32,
+        attn_flash = True,
+        ff_mult = 4,
         antialiased_downsample = True
     ):
         super().__init__()
@@ -432,7 +442,24 @@ class Discriminator(Module):
                 antialiased_downsample = antialiased_downsample
             )
 
-            blocks.append(block)
+            attn_block = Sequential(
+                Residual(LinearSpaceAttention(
+                    dim = out_chan,
+                    heads = attn_heads,
+                    dim_head = attn_dim_head,
+                    flash = attn_flash
+                )),
+                Residual(FeedForward(
+                    dim = out_chan,
+                    mult = ff_mult,
+                    images = True
+                ))
+            )
+
+            blocks.append(ModuleList([
+                block,
+                attn_block
+            ]))
 
             image_resolution //= 2
 
@@ -455,8 +482,9 @@ class Discriminator(Module):
 
     def forward(self, x):
 
-        for block in self.blocks:
+        for block, attn_block in self.blocks:
             x = block(x)
+            x = attn_block(x)
 
         return self.to_logits(x)
 
