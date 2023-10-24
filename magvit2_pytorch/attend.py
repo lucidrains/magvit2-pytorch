@@ -109,6 +109,11 @@ class Attend(nn.Module):
     ):
         batch, heads, q_len, _, k_len, is_cuda, device = *q.shape, k.shape[-2], q.is_cuda, q.device
 
+        # manage scale, since scale is not customizable in sdp, hack around it
+
+        if exists(self.scale):
+            q = q * self.scale / (q.shape[-1] ** -0.5)
+
         # Check if mask exists and expand to compatible shape
         # The mask is B L, so it would have to be expanded to B H N L
 

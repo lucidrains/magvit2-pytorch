@@ -56,6 +56,9 @@ def cast_tuple(t, length = 1):
 
 # tensor helpers
 
+def l2norm(t):
+    return F.normalize(t, dim = -1, p = 2)
+
 def pad_at_dim(t, pad, dim = -1, value = 0.):
     dims_from_right = (- dim - 1) if dim < 0 else (t.ndim - dim - 1)
     zeros = ((0, 0) * dims_from_right)
@@ -221,6 +224,64 @@ class Attention(Module):
 
         out = self.attend(q, k, v, mask = mask)
         return self.to_out(out)
+
+class LinearAttention(Module):
+    """
+    using the specific linear attention proposed in https://arxiv.org/abs/2106.09681
+    """
+
+    def __init__(
+        self,
+        *,
+        dim,
+        dim_head = 32,
+        heads = 8,
+        flash = False,
+        dropout = 0.
+    ):
+        super().__init__()
+        dim_inner = dim_head * heads
+        self.to_qkv = Sequential(
+            RMSNorm(dim),
+            nn.Linear(dim, dim_inner * 3, bias = False),
+            Rearrange('b n (qkv h d) -> qkv b h d n', qkv = 3, h = heads)
+        )
+
+        self.temperature = nn.Parameter(torch.ones(heads, 1, 1))
+
+        self.attend = Attend(
+            scale = 1.,
+            causal = False,
+            dropout = dropout,
+            flash = flash
+        )
+
+        self.to_out = Sequential(
+            Rearrange('b h d n -> b n (h d)'),
+            nn.Linear(dim_inner, dim)
+        )
+
+    def forward(self, x):
+        q, k, v = self.to_qkv(x)
+
+        q, k = map(l2norm, (q, k))
+        q = q * self.temperature.exp()
+
+        out = self.attend(q, k, v)
+
+        return self.to_out(out)
+
+class LinearSpaceAttention(LinearAttention):
+    def forward(self, x, *args, **kwargs):
+        x = rearrange(x, 'b c t h w -> b t h w c')
+        x, batch_ps = pack_one(x, '* h w c')
+        x, seq_ps = pack_one(x, 'b * c')
+
+        x = super().forward(x, *args, **kwargs)
+
+        x = unpack_one(x, seq_ps, 'b * c')
+        x = unpack_one(x, batch_ps, '* h w c')
+        return rearrange(x, 'b t h w c -> b c t h w')
 
 class SpaceAttention(Attention):
     def forward(self, x, *args, **kwargs):
@@ -853,6 +914,25 @@ class VideoTokenizer(Module):
 
                 decoder_layer = Sequential(
                     Residual(SpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
+
+            elif layer_type == 'linear_attend_space':
+                attn_kwargs = dict(
+                    dim = dim,
+                    dim_head = attn_dim_head,
+                    heads = attn_heads,
+                    dropout = attn_dropout,
+                    flash = flash_attn
+                )
+
+                encoder_layer = Sequential(
+                    Residual(LinearSpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
+
+                decoder_layer = Sequential(
+                    Residual(LinearSpaceAttention(**attn_kwargs)),
                     Residual(FeedForward(dim))
                 )
 
