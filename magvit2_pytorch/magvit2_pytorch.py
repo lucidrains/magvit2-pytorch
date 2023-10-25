@@ -27,6 +27,8 @@ from magvit2_pytorch.version import __version__
 
 from kornia.filters import filter3d
 
+import pickle
+
 # helper
 
 def exists(v):
@@ -850,6 +852,7 @@ class VideoTokenizer(Module):
     @beartype
     def __init__(
         self,
+        *,
         image_size,
         layers: Tuple[Union[str, Tuple[str, int]], ...] = (
             'residual',
@@ -884,6 +887,15 @@ class VideoTokenizer(Module):
         flash_attn = True
     ):
         super().__init__()
+
+        # for autosaving the config
+
+        _locals = locals()
+        _locals.pop('self', None)
+        _locals.pop('__class__', None)
+        self._configs = pickle.dumps(_locals)
+
+        # image size
 
         self.image_size = image_size
 
@@ -1066,6 +1078,19 @@ class VideoTokenizer(Module):
 
         self.has_gan = use_gan and adversarial_loss_weight > 0.
 
+    @classmethod
+    def init_and_load_from(cls, path, strict = True):
+        path = Path(path)
+        assert path.exists()
+        pkg = torch.load(str(path), map_location = 'cpu')
+
+        assert 'config' in pkg, 'model configs were not found in this saved checkpoint'
+
+        config = pickle.loads(pkg['config'])
+        tokenizer = cls(**config)
+        tokenizer.load(path, strict = strict)
+        return tokenizer
+
     def parameters(self):
         return [
             *self.conv_in.parameters(),
@@ -1104,12 +1129,13 @@ class VideoTokenizer(Module):
 
         pkg = dict(
             model_state_dict = self.state_dict(),
-            version = __version__
+            version = __version__,
+            config = self._configs
         )
 
         torch.save(pkg, str(path))
 
-    def load(self, path):
+    def load(self, path, strict = True):
         path = Path(path)
         assert path.exists()
 
@@ -1122,7 +1148,7 @@ class VideoTokenizer(Module):
         if exists(version):
             print(f'loading checkpointed tokenizer from version {version}')
 
-        self.load_state_dict(state_dict)
+        self.load_state_dict(state_dict, strict = strict)
 
     @beartype
     def encode(
