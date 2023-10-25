@@ -1,9 +1,11 @@
 from setuptools import setup, find_packages
 
+exec(open('magvit2_pytorch/version.py').read())
+
 setup(
   name = 'magvit2-pytorch',
   packages = find_packages(),
-  version = '0.0.30',
+  version = __version__,
   license='MIT',
   description = 'MagViT2 - Pytorch',
   long_description_content_type = 'text/markdown',

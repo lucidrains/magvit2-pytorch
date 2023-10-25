@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 from math import log2, ceil, sqrt
 from functools import wraps, partial
 
@@ -22,6 +23,7 @@ from beartype import beartype
 from beartype.typing import Union, Tuple, Optional
 
 from magvit2_pytorch.attend import Attend
+from magvit2_pytorch.version import __version__
 
 from kornia.filters import filter3d
 
@@ -1096,11 +1098,31 @@ class VideoTokenizer(Module):
     def load_state_dict(self, *args, **kwargs):
         return super().load_state_dict(*args, **kwargs)
 
+    def save(self, path, overwrite = True):
+        path = Path(path)
+        assert overwrite or not path.exists(), f'{str(path)} already exists'
+
+        pkg = dict(
+            model_state_dict = self.state_dict(),
+            version = __version__
+        )
+
+        torch.save(pkg, str(path))
+
     def load(self, path):
         path = Path(path)
         assert path.exists()
-        pt = torch.load(str(path))
-        self.load_state_dict(pt)
+
+        pkg = torch.load(str(path))
+        state_dict = pkg.get('model_state_dict')
+        version = pkg.get('version')
+
+        assert exists(state_dict)
+
+        if exists(version):
+            print(f'loading checkpointed tokenizer from version {version}')
+
+        self.load_state_dict(state_dict)
 
     @beartype
     def encode(
