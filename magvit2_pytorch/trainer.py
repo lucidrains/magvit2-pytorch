@@ -59,10 +59,15 @@ class VideoTokenizerTrainer(Module):
         dataset_kwargs: dict = dict()
     ):
         super().__init__()
-        self.accelerate = Accelerator(**accelerate_kwargs)
+
+        self.accelerator = Accelerator(**accelerate_kwargs)
+
+        # model and exponentially moving averaged model
 
         self.model = model
         self.ema_model = EMA(model, **ema_kwargs)
+
+        # dataset
 
         if not exists(dataset):
             dataset_klass = VideoDataset if dataset_type == 'videos' else ImageDatset
@@ -71,6 +76,8 @@ class VideoTokenizerTrainer(Module):
 
         self.dataset = dataset
         self.dataloader = DataLoader(dataset, shuffle = True, batch_size = batch_size)
+
+        # optimizers
 
         self.optimizer = get_optimizer(model.parameters(), **optimizer_kwargs)
         self.discr_optimizer = get_optimizer(model.discr_parameters(), **optimizer_kwargs)
@@ -83,10 +90,26 @@ class VideoTokenizerTrainer(Module):
 
         self.apply_gradient_penalty_every = apply_gradient_penalty_every
 
+        # prepare for maybe distributed
+
+        (
+            self.model,
+            self.dataloader,
+            self.optimizer,
+            self.discr_optimizer
+        ) = self.accelerator.prepare(
+            self.model,
+            self.dataloader,
+            self.optimizer,
+            self.discr_optimizer
+        )
+
+        # keep track of train step
+
         self.register_buffer('step', torch.tensor(0.))
 
     def print(self, msg):
-        return self.accelerate.print(msg)
+        return self.accelerator.print(msg)
 
     def train(self):
 
@@ -105,9 +128,12 @@ class VideoTokenizerTrainer(Module):
                     return_loss = True
                 )
 
-                (loss / self.grad_accum_every).backward()
+                self.accelerator.backward(loss / self.grad_accum_every)
 
             self.print(f'loss: {loss.item()}')
+
+            if exists(self.max_grad_norm):
+                self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
             self.optimizer.step()
             self.optimizer.zero_grad()
@@ -129,9 +155,12 @@ class VideoTokenizerTrainer(Module):
                     apply_gradient_penalty = apply_gradient_penalty
                 )
 
-                (discr_loss / self.grad_accum_every).backward()
+                self.accelerator.backward(discr_loss / self.grad_accum_every)
 
             self.print(f'discr loss: {discr_loss.item()}')
+
+            if exists(self.max_grad_norm):
+                self.accelerator.clip_grad_norm_(self.discr_model.parameters(), self.max_grad_norm)
 
             self.discr_optimizer.step()
             self.discr_optimizer.zero_grad()
