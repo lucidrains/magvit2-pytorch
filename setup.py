@@ -25,6 +25,9 @@ setup(
     'einops>=0.7.0',
     'ema-pytorch',
     'kornia',
+    'opencv-python',
+    'pillow',
+    'numpy',
     'vector-quantize-pytorch>=1.9.18',
     'torch',
     'torchvision'
