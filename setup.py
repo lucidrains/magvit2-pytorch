@@ -20,7 +20,7 @@ setup(
     'generative video model'
   ],
   install_requires=[
-    'accelerate',
+    'accelerate>=0.24.0',
     'beartype',
     'einops>=0.7.0',
     'ema-pytorch',
