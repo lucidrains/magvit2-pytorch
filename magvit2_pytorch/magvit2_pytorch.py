@@ -1012,6 +1012,8 @@ class VideoTokenizer(Module):
         # use a MLP stem for conditioning, if needed
 
         self.has_cond = has_cond
+        self.encoder_cond_in = nn.Identity()
+        self.decoder_cond_in = nn.Identity()
 
         if has_cond:
             self.dim_cond = dim_cond
