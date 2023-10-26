@@ -125,7 +125,7 @@ def video_tensor_to_gif(
 # gif -> (channels, frame, height, width) tensor
 
 def gif_to_tensor(
-    path,
+    path: str,
     channels = 3,
     transform = T.ToTensor()
 ):
@@ -228,8 +228,7 @@ class VideoDataset(Dataset):
         self.transform = T.Compose([
             T.Resize(image_size),
             T.RandomHorizontalFlip() if horizontal_flip else T.Lambda(identity),
-            T.CenterCrop(image_size),
-            T.ToTensor()
+            T.CenterCrop(image_size)
         ])
 
         # functions to transform video path to tensor
@@ -245,14 +244,16 @@ class VideoDataset(Dataset):
     def __getitem__(self, index):
         path = self.paths[index]
         ext = path.suffix
+        path_str = str(path)
 
         if ext == '.gif':
-            tensor = self.gif_to_tensor(path)
+            tensor = self.gif_to_tensor(path_str)
         elif ext == '.mp4':
-            tensor = self.mp4_to_tensor(str(path))
+            tensor = self.mp4_to_tensor(path_str)
         else:
             raise ValueError(f'unknown extension {ext}')
 
+        tensor = self.transform(tensor)
         return self.cast_num_frames_fn(tensor)
 
 # override dataloader to be able to collate strings
