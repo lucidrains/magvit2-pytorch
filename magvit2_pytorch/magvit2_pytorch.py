@@ -243,6 +243,7 @@ class LinearAttention(Module):
         dim,
         dim_head = 32,
         heads = 8,
+        scale = 8,
         flash = False,
         dropout = 0.
     ):
@@ -257,7 +258,7 @@ class LinearAttention(Module):
         self.temperature = nn.Parameter(torch.ones(heads, 1, 1))
 
         self.attend = Attend(
-            scale = 1.,
+            scale = scale,
             causal = False,
             dropout = dropout,
             flash = flash
