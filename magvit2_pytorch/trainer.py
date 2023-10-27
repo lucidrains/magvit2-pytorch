@@ -73,11 +73,12 @@ class VideoTokenizerTrainer(Module):
 
         self.model = model
 
-        self.ema_model = EMA(
-            model.copy_for_eval(),
-            include_online_model = False,
-            **ema_kwargs
-        )
+        if self.is_main:
+            self.ema_model = EMA(
+                model.copy_for_eval(),
+                include_online_model = False,
+                **ema_kwargs
+            )
 
         # dataset
 
@@ -216,11 +217,14 @@ class VideoTokenizerTrainer(Module):
         self.optimizer.step()
         self.optimizer.zero_grad()
 
-        self.wait()
-
         # update ema model
 
-        self.ema_model.update()
+        self.wait()
+
+        if self.is_main:
+            self.ema_model.update()
+
+        self.wait()
 
         # discriminator
 
