@@ -1241,6 +1241,7 @@ class VideoTokenizer(Module):
         return_codes = False,
         return_recon = False,
         return_discr_loss = False,
+        return_recon_loss_only = False,
         apply_gradient_penalty = True
     ):
         assert (return_loss + return_codes + return_discr_loss) <= 1
@@ -1285,10 +1286,15 @@ class VideoTokenizer(Module):
 
         # reconstruction loss
 
-        if not (return_loss or return_discr_loss):
+        if not (return_loss or return_discr_loss or return_recon_loss_only):
             return recon_video
 
         recon_loss = F.mse_loss(video, recon_video)
+
+        # for validation, only return recon loss
+
+        if return_recon_loss_only:
+            return recon_loss, recon_video
 
         # gan discriminator loss
 
@@ -1342,6 +1348,8 @@ class VideoTokenizer(Module):
             gen_loss = hinge_gen_loss(fake_logits)
 
             last_dec_layer = self.conv_out.conv.weight
+
+            assert self.training
 
             norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
             norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)

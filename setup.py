@@ -23,7 +23,7 @@ setup(
     'accelerate>=0.24.0',
     'beartype',
     'einops>=0.7.0',
-    'ema-pytorch',
+    'ema-pytorch>=0.2.4',
     'kornia',
     'opencv-python',
     'pillow',
