@@ -58,6 +58,7 @@ class VideoTokenizerTrainer(Module):
         random_split_seed = 42,
         valid_frac = 0.05,
         validate_every_step = 100,
+        checkpoint_every_step = 100,
         num_frames = 17,
         accelerate_kwargs: dict = dict(),
         ema_kwargs: dict = dict(),
@@ -113,6 +114,7 @@ class VideoTokenizerTrainer(Module):
         self.valid_dataloader = DataLoader(valid_dataset, shuffle = True, drop_last = True, batch_size = batch_size)
 
         self.validate_every_step = validate_every_step
+        self.checkpoint_every_step = checkpoint_every_step
 
         # optimizers
 
@@ -158,6 +160,9 @@ class VideoTokenizerTrainer(Module):
     @property
     def is_local_main(self):
         return self.accelerator.is_local_main_process
+
+    def wait(self):
+        return self.accelerator.wait_for_everyone()
 
     def print(self, msg):
         return self.accelerator.print(msg)
@@ -211,7 +216,7 @@ class VideoTokenizerTrainer(Module):
         self.optimizer.step()
         self.optimizer.zero_grad()
 
-        self.accelerator.wait_for_everyone()
+        self.wait()
 
         # update ema model
 
@@ -273,11 +278,17 @@ class VideoTokenizerTrainer(Module):
 
             self.train_step(dl_iter)
 
-            self.accelerator.wait_for_everyone()
+            self.wait()
 
             if self.is_main and not (step % self.validate_every_step):
                 self.valid_step(valid_dl_iter)
 
-            self.accelerator.wait_for_everyone()
+            self.wait()
+
+            if self.is_main and not (step % self.checkpoint_every_step):
+                checkpoint_num = step // self.checkpoint_every_step
+                self.save(f'./checkpoint.{checkpoint_num}.pt')
+
+            self.wait()
 
             step += 1
