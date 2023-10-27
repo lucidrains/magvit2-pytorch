@@ -1081,6 +1081,10 @@ class VideoTokenizer(Module):
 
         self.has_gan = use_gan and adversarial_loss_weight > 0.
 
+    @property
+    def device(self):
+        return self.zero.device
+
     @classmethod
     def init_and_load_from(cls, path, strict = True):
         path = Path(path)
@@ -1108,11 +1112,13 @@ class VideoTokenizer(Module):
         return self.discr.parameters()
 
     def copy_for_eval(self):
-        device = next(self.parameters()).device
+        device = self.device
         vae_copy = copy.deepcopy(self.cpu())
 
-        if vae_copy.use_vgg_and_gan:
+        if hasattr(vae_copy, 'discr'):
             del vae_copy.discr
+
+        if hasattr(vae_copy, 'vgg'):
             del vae_copy.vgg
 
         vae_copy.eval()

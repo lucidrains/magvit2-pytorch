@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from torch import nn
 from torch.nn import Module
@@ -69,7 +71,12 @@ class VideoTokenizerTrainer(Module):
         # model and exponentially moving averaged model
 
         self.model = model
-        self.ema_model = EMA(model, **ema_kwargs)
+
+        self.ema_model = EMA(
+            model.copy_for_eval(),
+            include_online_model = False,
+            **ema_kwargs
+        )
 
         # dataset
 
@@ -140,8 +147,44 @@ class VideoTokenizerTrainer(Module):
 
         self.register_buffer('step', torch.tensor(0))
 
+    @property
+    def is_main(self):
+        return self.accelerator.is_main_process
+
+    @property
+    def unwrapped_model(self):
+        return self.accelerator.unwrap_model(self.model)
+
+    @property
+    def is_local_main(self):
+        return self.accelerator.is_local_main_process
+
     def print(self, msg):
         return self.accelerator.print(msg)
+
+    def save(self, path, overwrite = True):
+        path = Path(path)
+        assert overwrite or not path.exists()
+
+        pkg = dict(
+            model = self.unwrapped_model.state_dict(),
+            ema_model = self.ema_model.state_dict(),
+            optimizer = self.optimizer.state_dict(),
+            discr_optimizer = self.discr_optimizer.state_dict()
+        )
+
+        torch.save(pkg, str(path))
+
+    def load(self, path):
+        path = Path(path)
+        assert path.exists()
+
+        pkg = torch.load(str(path))
+
+        self.model.load_state_dict(pkg['model'])
+        self.ema_model.load_state_dict(pkg['ema_model'])
+        self.optimizer.load_state_dict(pkg['optimizer'])
+        self.discr_optimizer.load_state_dict(pkg['discr_optimizer'])
 
     def train_step(self, dl_iter):
         self.model.train()
@@ -167,6 +210,8 @@ class VideoTokenizerTrainer(Module):
 
         self.optimizer.step()
         self.optimizer.zero_grad()
+
+        self.accelerator.wait_for_everyone()
 
         # update ema model
 
@@ -228,7 +273,11 @@ class VideoTokenizerTrainer(Module):
 
             self.train_step(dl_iter)
 
-            if not (step % self.validate_every_step):
+            self.accelerator.wait_for_everyone()
+
+            if self.is_main and not (step % self.validate_every_step):
                 self.valid_step(valid_dl_iter)
+
+            self.accelerator.wait_for_everyone()
 
             step += 1
