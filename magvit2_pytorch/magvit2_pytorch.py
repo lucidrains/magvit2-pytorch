@@ -841,7 +841,8 @@ LossBreakdown = namedtuple('LossBreakdown', [
     'lfq_batch_entropy_loss',
     'lfq_commitment_loss',
     'perceptual_loss',
-    'gen_loss'
+    'gen_loss',
+    'adaptive_adversarial_weight'
 ])
 
 DiscrLossBreakdown = namedtuple('DiscrLossBreakdown', [
@@ -1362,13 +1363,14 @@ class VideoTokenizer(Module):
 
             last_dec_layer = self.conv_out.conv.weight
 
-            assert self.training
+            adaptive_weight = 1.
 
-            norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
-            norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)
+            if not self.training:
+                norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
+                norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)
 
-            adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
-            adaptive_weight.clamp_(max = 1e4)
+                adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
+                adaptive_weight.clamp_(max = 1e4)
         else:
             gen_loss = self.zero
             adaptive_weight = 0.
@@ -1378,7 +1380,7 @@ class VideoTokenizer(Module):
             + perceptual_loss * self.perceptual_loss_weight \
             + gen_loss * adaptive_weight * self.adversarial_loss_weight
 
-        return total_loss, LossBreakdown(recon_loss, aux_losses, *lfq_loss_breakdown, perceptual_loss, gen_loss)
+        return total_loss, LossBreakdown(recon_loss, aux_losses, *lfq_loss_breakdown, perceptual_loss, gen_loss, adaptive_weight)
 
 # main class
 
