@@ -53,6 +53,7 @@ tokenizer.eval()
 codes, recon_video = tokenizer(videos, return_codes = True, return_recon = True)
 
 # train a transformer on the codes, either autoregressive or maskgit or whatever
+# decode to video with `decode_from_code_indices`
 
 assert torch.allclose(recon_video, tokenizer.decode_from_code_indices(codes))
 
