@@ -22,7 +22,7 @@ $ pip install magvit2-pytorch
 
 ```python
 import torch
-from magvit2_pytorch.magvit2_pytorch import VideoTokenizer
+from magvit2_pytorch import VideoTokenizer
 
 tokenizer = VideoTokenizer(
     image_size = 256,
@@ -50,7 +50,11 @@ total_loss.backward()
 # after much training above, you can get the tokenized codes
 
 tokenizer.eval()
-codes = tokenizer(videos, return_codes = True)
+codes, recon_video = tokenizer(videos, return_codes = True, return_recon = True)
+
+# train a transformer on the codes, either autoregressive or maskgit or whatever
+
+assert torch.allclose(recon_video, tokenizer.decode_from_code_indices(codes))
 
 ```
 

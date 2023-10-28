@@ -1208,6 +1208,8 @@ class VideoTokenizer(Module):
         codes: Tensor,
         cond: Optional[Tensor] = None
     ):
+        assert codes.dtype == torch.long
+
         quantized = self.quantizers.indices_to_codes(codes)
         out = self.decode(quantized, cond = cond)
         return out[:, :, self.time_padding:]
@@ -1296,7 +1298,7 @@ class VideoTokenizer(Module):
         recon_video = padded_recon_video[:, :, self.time_padding:]
 
         if return_codes:
-            return recon_video, codes
+            return codes, recon_video
 
         # reconstruction loss
 
