@@ -55,6 +55,8 @@ class VideoTokenizerTrainer(Module):
         dataset: Optional[Dataset] = None,
         dataset_folder: Optional[str] = None,
         dataset_type: VideosOrImagesLiteral = 'videos',
+        checkpoint_folder = './checkpoints',
+        results_folder = './results',
         random_split_seed = 42,
         valid_frac = 0.05,
         validate_every_step = 100,
@@ -145,6 +147,20 @@ class VideoTokenizerTrainer(Module):
             self.optimizer,
             self.discr_optimizer
         )
+
+        # checkpoints and sampled results folder
+
+        checkpoint_folder = Path(checkpoint_folder)
+        results_folder = Path(results_folder)
+
+        checkpoint_folder.mkdir(parents = True, exist_ok = True)
+        results_folder.mkdir(parents = True, exist_ok = True)
+
+        assert checkpoint_folder.is_dir()
+        assert results_folder.is_dir()
+
+        self.checkpoint_folder = checkpoint_folder
+        self.results_folder = results_folder
 
         # keep track of train step
 
@@ -291,7 +307,8 @@ class VideoTokenizerTrainer(Module):
 
             if self.is_main and not (step % self.checkpoint_every_step):
                 checkpoint_num = step // self.checkpoint_every_step
-                self.save(f'./checkpoint.{checkpoint_num}.pt')
+                checkpoint_path = self.checkpoints_folder / f'checkpoint.{checkpoint_num}.pt'
+                self.save(str(checkpoint_path))
 
             self.wait()
 
