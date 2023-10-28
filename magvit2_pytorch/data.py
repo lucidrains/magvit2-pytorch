@@ -10,6 +10,7 @@ import cv2
 from PIL import Image
 from torchvision import transforms as T, utils
 
+from beartype import beartype
 from beartype.typing import Tuple, List
 from beartype.door import is_bearable
 
@@ -50,6 +51,16 @@ def convert_image_to_fn(img_type, image):
 
     return image.convert(img_type)
 
+def append_if_no_suffix(path: str, suffix: str):
+    path = Path(path)
+
+    if path.suffix == '':
+        path = path.parent / (path.name + suffix)
+
+    assert path.suffix == suffix, f'{str(path)} needs to have suffix {suffix}'
+
+    return str(path)
+
 # image related helpers fnuctions and dataset
 
 class ImageDataset(Dataset):
@@ -72,7 +83,7 @@ class ImageDataset(Dataset):
 
         self.transform = T.Compose([
             T.Lambda(partial(convert_image_to_fn, convert_image_to)),
-            T.Resize(image_size),
+            T.Resize(image_size, antialias = True),
             T.RandomHorizontalFlip(),
             T.CenterCrop(image_size),
             T.ToTensor()
@@ -110,6 +121,7 @@ def seek_all_images(img: Tensor, channels = 3):
 
 # tensor of shape (channels, frames, height, width) -> gif
 
+@beartype
 def video_tensor_to_gif(
     tensor: Tensor,
     path: str,
@@ -117,9 +129,10 @@ def video_tensor_to_gif(
     loop = 0,
     optimize = True
 ):
+    path = append_if_no_suffix(path, '.gif')
     images = map(T.ToPILImage(), tensor.unbind(dim = 1))
     first_img, *rest_imgs = images
-    first_img.save(path, save_all = True, append_images = rest_imgs, duration = duration, loop = loop, optimize = optimize)
+    first_img.save(str(path), save_all = True, append_images = rest_imgs, duration = duration, loop = loop, optimize = optimize)
     return images
 
 # gif -> (channels, frame, height, width) tensor
@@ -139,7 +152,7 @@ def video_to_tensor(
     path: str,              # Path of the video to be imported
     num_frames = -1,        # Number of frames to be stored in the output tensor
     crop_size = None
-) -> Tensor:          # shape (1, channels, frames, height, width)
+) -> Tensor:                # shape (1, channels, frames, height, width)
 
     video = cv2.VideoCapture(path)
 
@@ -164,19 +177,21 @@ def video_to_tensor(
 
     return frames_torch[:, :num_frames, :, :]
 
+@beartype
 def tensor_to_video(
     tensor: Tensor,        # Pytorch video tensor
     path: str,             # Path of the video to be saved
     fps = 25,              # Frames per second for the saved video
     video_format = 'MP4V'
 ):
-    # Import the video and cut it into frames.
+    path = append_if_no_suffix(path, '.mp4')
+
     tensor = tensor.cpu()
 
     num_frames, height, width = tensor.shape[-3:]
 
     fourcc = cv2.VideoWriter_fourcc(*video_format) # Changes in this line can allow for different video formats.
-    video = cv2.VideoWriter(path, fourcc, fps, (width, height))
+    video = cv2.VideoWriter(str(path), fourcc, fps, (width, height))
 
     frames = []
 
@@ -210,7 +225,6 @@ class VideoDataset(Dataset):
         image_size,
         channels = 3,
         num_frames = 17,
-        horizontal_flip = False,
         force_num_frames = True,
         exts = ['gif', 'mp4']
     ):
@@ -226,8 +240,7 @@ class VideoDataset(Dataset):
         print(f'{len(self.paths)} training samples found at {folder}')
 
         self.transform = T.Compose([
-            T.Resize(image_size),
-            T.RandomHorizontalFlip() if horizontal_flip else T.Lambda(identity),
+            T.Resize(image_size, antialias = True),
             T.CenterCrop(image_size)
         ])
 
@@ -250,10 +263,11 @@ class VideoDataset(Dataset):
             tensor = self.gif_to_tensor(path_str)
         elif ext == '.mp4':
             tensor = self.mp4_to_tensor(path_str)
+            frames = tensor.unbind(dim = 1)
+            tensor = torch.stack([*map(self.transform, frames)], dim = 1)
         else:
             raise ValueError(f'unknown extension {ext}')
 
-        tensor = self.transform(tensor)
         return self.cast_num_frames_fn(tensor)
 
 # override dataloader to be able to collate strings

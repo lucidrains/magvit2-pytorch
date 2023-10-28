@@ -15,10 +15,13 @@ from magvit2_pytorch.magvit2_pytorch import VideoTokenizer
 from magvit2_pytorch.data import (
     VideoDataset,
     ImageDataset,
-    DataLoader
+    DataLoader,
+    video_tensor_to_gif
 )
 
 from accelerate import Accelerator
+
+from einops import rearrange
 
 from ema_pytorch import EMA
 
@@ -55,7 +58,7 @@ class VideoTokenizerTrainer(Module):
         dataset: Optional[Dataset] = None,
         dataset_folder: Optional[str] = None,
         dataset_type: VideosOrImagesLiteral = 'videos',
-        checkpoint_folder = './checkpoints',
+        checkpoints_folder = './checkpoints',
         results_folder = './results',
         random_split_seed = 42,
         valid_frac = 0.05,
@@ -150,16 +153,16 @@ class VideoTokenizerTrainer(Module):
 
         # checkpoints and sampled results folder
 
-        checkpoint_folder = Path(checkpoint_folder)
+        checkpoints_folder = Path(checkpoints_folder)
         results_folder = Path(results_folder)
 
-        checkpoint_folder.mkdir(parents = True, exist_ok = True)
+        checkpoints_folder.mkdir(parents = True, exist_ok = True)
         results_folder.mkdir(parents = True, exist_ok = True)
 
-        assert checkpoint_folder.is_dir()
+        assert checkpoints_folder.is_dir()
         assert results_folder.is_dir()
 
-        self.checkpoint_folder = checkpoint_folder
+        self.checkpoints_folder = checkpoints_folder
         self.results_folder = results_folder
 
         # keep track of train step
@@ -270,20 +273,40 @@ class VideoTokenizerTrainer(Module):
         self.step.add_(1)
 
     @torch.no_grad()
-    def valid_step(self, dl_iter):
+    def valid_step(
+        self,
+        dl_iter,
+        save_recons = True,
+        num_save_recons = 1
+    ):
         self.ema_model.eval()
 
         recon_loss = 0.
 
         for _ in range(self.grad_accum_every):
-            valid_data, = next(dl_iter)
+            valid_video, = next(dl_iter)
 
             loss, recon_video = self.ema_model(
-                valid_data,
+                valid_video,
                 return_recon_loss_only = True
             )
 
             recon_loss += loss / self.grad_accum_every
+
+            if not save_recons:
+                continue
+
+            valid_video, recon_video = map(lambda t: t[:num_save_recons], (valid_video, recon_video))
+
+            real_and_recon = rearrange([valid_video, recon_video], 'n b c f h w -> c f (b h) (n w)')
+
+            validate_step = self.step.item() // self.validate_every_step
+
+            sample_path = str(self.results_folder / f'sampled.{validate_step}.gif')
+
+            video_tensor_to_gif(real_and_recon, str(sample_path))
+
+            print(f'sample saved to {str(sample_path)}')
 
         self.print(f'validation loss {recon_loss:.3f}')
 
