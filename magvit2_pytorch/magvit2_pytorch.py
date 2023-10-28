@@ -1248,6 +1248,11 @@ class VideoTokenizer(Module):
 
         return self.conv_out(x)
 
+    @torch.no_grad()
+    def tokenize(self, video):
+        self.eval()
+        return self.forward(video, return_codes = True)
+
     @beartype
     def forward(
         self,

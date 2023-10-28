@@ -49,14 +49,19 @@ total_loss.backward()
 
 # after much training above, you can get the tokenized codes
 
-tokenizer.eval()
-codes, recon_video = tokenizer(videos, return_codes = True, return_recon = True)
+codes = tokenizer.tokenize(videos)
 
 # train a transformer on the codes, either autoregressive or maskgit or whatever
 # decode to video with `decode_from_code_indices`
 
-assert torch.allclose(recon_video, tokenizer.decode_from_code_indices(codes))
+decoded_video = tokenizer.decode_from_code_indices(codes)
 
+# sanity check
+
+assert torch.allclose(
+    decoded_video,
+    tokenizer(videos, return_recon = True)
+)
 ```
 
 ## Todo
