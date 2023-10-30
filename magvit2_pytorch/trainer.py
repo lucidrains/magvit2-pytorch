@@ -187,6 +187,13 @@ class VideoTokenizerTrainer(Module):
     def print(self, msg):
         return self.accelerator.print(msg)
 
+    @property
+    def ema_tokenizer(self):
+        return self.ema_model.ema_model
+
+    def tokenize(self, *args, **kwargs):
+        return self.ema_tokenizer.tokenize(*args, **kwargs)
+
     def save(self, path, overwrite = True):
         path = Path(path)
         assert overwrite or not path.exists()
