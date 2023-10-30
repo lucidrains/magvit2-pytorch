@@ -21,46 +21,57 @@ $ pip install magvit2-pytorch
 ## Usage
 
 ```python
-import torch
-from magvit2_pytorch import VideoTokenizer
+from magvit2_pytorch import (
+    VideoTokenizer,
+    VideoTokenizerTrainer
+)
 
 tokenizer = VideoTokenizer(
-    image_size = 256,
+    image_size = 128,
     init_dim = 64,
     layers = (
         'residual',
         ('compress_space', 128),
-        'residual',
-        'residual',
         'attend_space',
+        'linear_attend_space',
+        'residual',
+        'residual',
+        ('consecutive_residual', 3),
         ('compress_time', 256),
-        'attend_time'
+        'attend_time',
     )
 )
 
-# get a ton of videos
+trainer = VideoTokenizerTrainer(
+    tokenizer,
+    dataset_folder = '/path/to/a/lot/of/video',
+    batch_size = 16,
+    grad_accum_every = 4,
+    num_train_steps = 1_000_000
+)
 
-videos = torch.randn(2, 3, 16 + 1, 256, 256) # (batch, channels, time, height, width)
+trainer.train()
 
-# course it through the autoencoder
+# after a lot of training ...
+# can use the EMA of the tokenizer
 
-total_loss, loss_breakdown = tokenizer(videos, return_loss = True)
-total_loss.backward()
+ema_tokenizer = trainer.ema_tokenizer
 
-# after much training above, you can get the tokenized codes
+# mock video
 
-codes = tokenizer.tokenize(videos)
+video = torch.randn(1, 3, 17, 32, 32)
 
-# train a transformer on the codes, either autoregressive or maskgit or whatever
-# decode to video with `decode_from_code_indices`
+# tokenizing video to discrete codes
 
-decoded_video = tokenizer.decode_from_code_indices(codes)
+codes = ema_tokenizer.tokenize(video) # (1, 9, 16, 16) <- time and space downsampled by 2x. flatten token ids for (non)-autoregressive training
 
 # sanity check
 
+decoded_video = ema_tokenizer.decode_from_code_indices(codes)
+
 assert torch.allclose(
     decoded_video,
-    tokenizer(videos, return_recon = True)
+    ema_tokenizer(video, return_recon = True)
 )
 ```
 
