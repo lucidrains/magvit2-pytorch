@@ -84,8 +84,11 @@ assert torch.allclose(
     - [x] add conditioning for encoder decoder with residual modulatable conv 3d
     - [x] `decode_from_codebook_indices` should be able to accept flattened ids and reshape to correct feature map dimensions and decode back to video
     - [x] add trainer and manage discriminator training
+    - [x] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
+        - [x] complete multiscale discriminator losses
+        - [ ] auto-manage multiscale discriminator optimizers
+        - [ ] helper functions for temporal discrimination (picking random consecutive frames)
     - [ ] add adaptive rmsnorm
-    - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
     - [ ] add attention
         - [ ] use axial rotary embeddings for spatial
     - [ ] add an optional autoregressive loss at some penultimate layer of the decoder - check literature to see if anyone else has done this unification of transformer decoder + tokenizer in one architecture

@@ -55,6 +55,10 @@ def unpack_one(t, ps, pattern):
 def is_odd(n):
     return not divisible_by(n, 2)
 
+def maybe_del_attr_(o, attr):
+    if hasattr(o, attr):
+        delattr(o, attr)
+
 def cast_tuple(t, length = 1):
     return t if isinstance(t, tuple) else ((t,) * length)
 
@@ -842,7 +846,9 @@ LossBreakdown = namedtuple('LossBreakdown', [
     'lfq_commitment_loss',
     'perceptual_loss',
     'gen_loss',
-    'adaptive_adversarial_weight'
+    'adaptive_adversarial_weight',
+    'multiscale_gen_losses',
+    'multiscale_gen_adaptive_weights'
 ])
 
 DiscrLossBreakdown = namedtuple('DiscrLossBreakdown', [
@@ -883,9 +889,11 @@ class VideoTokenizer(Module):
         perceptual_loss_weight = 1.,
         antialiased_downsample = True,
         discr_kwargs: Optional[dict] = None,
+        multiscale_discrs: Optional[Tuple[Module, ...]] = None,
         use_gan = True,
         adversarial_loss_weight = 1.,
         grad_penalty_loss_weight = 10.,
+        multiscale_adversarial_loss_weight = 1.,
         flash_attn = True
     ):
         super().__init__()
@@ -1095,6 +1103,13 @@ class VideoTokenizer(Module):
 
         self.has_gan = use_gan and adversarial_loss_weight > 0.
 
+        # multi-scale discriminators
+
+        self.multiscale_discrs = ModuleList([*multiscale_discrs])
+
+        self.multiscale_adversarial_loss_weight = multiscale_adversarial_loss_weight
+        self.has_multiscale_discrs = use_gan and multiscale_adversarial_loss_weight > 0.
+
     @property
     def device(self):
         return self.zero.device
@@ -1129,11 +1144,9 @@ class VideoTokenizer(Module):
         device = self.device
         vae_copy = copy.deepcopy(self.cpu())
 
-        if hasattr(vae_copy, 'discr'):
-            del vae_copy.discr
-
-        if hasattr(vae_copy, 'vgg'):
-            del vae_copy.vgg
+        maybe_del_attr_(vae_copy, 'discr')
+        maybe_del_attr_(vae_copy, 'vgg')
+        maybe_del_attr_(vae_copy, 'multiscale_discrs')
 
         vae_copy.eval()
         return vae_copy.to(device)
@@ -1335,6 +1348,8 @@ class VideoTokenizer(Module):
             assert self.has_gan
             assert exists(self.discr)
 
+            # pick a random frame for image discriminator
+
             frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
 
             real = pick_video_frame(video, frame_indices)
@@ -1349,14 +1364,40 @@ class VideoTokenizer(Module):
 
             discr_loss = hinge_discr_loss(fake_logits, real_logits)
 
+            # multiscale discriminators
+
+            multiscale_discr_losses = []
+
+            if self.has_multiscale_discrs:
+                for discr in self.multiscale_discrs:
+                    multiscale_real_logits = discr(video)
+                    multiscale_fake_logits = discr(recon_video)
+
+                    multiscale_discr_loss = hinge_discr_loss(fake_logits, real_logits)
+
+                    multiscale_discr_losses.append(multiscale_discr_loss)
+            else:
+                multiscale_discr_losses.append(self.zero)
+
+            # gradient penalty
+
             if apply_gradient_penalty:
                 gradient_penalty_loss = gradient_penalty(real, real_logits)
             else:
                 gradient_penalty_loss = self.zero
 
-            total_loss = discr_loss + gradient_penalty_loss * self.grad_penalty_loss_weight
+            # total loss
 
-            return total_loss, DiscrLossBreakdown(discr_loss, gradient_penalty_loss)
+            total_loss = discr_loss + \
+                gradient_penalty_loss * self.grad_penalty_loss_weight + \
+                sum(multiscale_discr_losses)
+
+            discr_loss_breakdown = DiscrLossBreakdown(
+                discr_loss,
+                gradient_penalty_loss
+            )
+
+            return total_loss, discr_loss_breakdown
 
         # perceptual loss
 
@@ -1373,6 +1414,16 @@ class VideoTokenizer(Module):
         else:
             perceptual_loss = self.zero
 
+        # get gradient with respect to perceptual loss for last decoder layer
+        # needed for adaptive weighting
+
+        last_dec_layer = self.conv_out.conv.weight
+
+        if self.training and (self.has_gan or self.has_multiscale_discrs):
+            norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)
+
+        # per-frame image discriminator
+
         if self.has_gan:
             frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
             recon_video_frames = pick_video_frame(recon_video, frame_indices)
@@ -1380,26 +1431,64 @@ class VideoTokenizer(Module):
             fake_logits = self.discr(recon_video_frames)
             gen_loss = hinge_gen_loss(fake_logits)
 
-            last_dec_layer = self.conv_out.conv.weight
-
             adaptive_weight = 1.
 
             if not self.training:
                 norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
-                norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)
-
                 adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
                 adaptive_weight.clamp_(max = 1e4)
         else:
             gen_loss = self.zero
             adaptive_weight = 0.
 
+        # multiscale discriminator losses
+
+        multiscale_gen_losses = []
+        multiscale_gen_adaptive_weights = []
+
+        if self.has_multiscale_discrs:
+            for discr in self.multiscale_discrs:
+                fake_logits = recon_video_frames
+                multiscale_gen_loss = hinge_gen_loss(fake_logits)
+
+                multiscale_gen_losses.append(multiscale_gen_loss)
+
+                adaptive_weight = 1.
+
+                if not self.training:
+                    norm_grad_wrt_gen_loss = grad_layer_wrt_loss(multiscale_gen_loss, last_dec_layer).norm(p = 2)
+                    adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
+                    adaptive_weight.clamp_(max = 1e4)
+
+                    multiscale_gen_adaptive_weights.append(adaptive_weight)
+
+        # calculate total loss
+
         total_loss = recon_loss \
             + aux_losses * self.lfq_aux_loss_weight \
             + perceptual_loss * self.perceptual_loss_weight \
             + gen_loss * adaptive_weight * self.adversarial_loss_weight
 
-        return total_loss, LossBreakdown(recon_loss, aux_losses, *lfq_loss_breakdown, perceptual_loss, gen_loss, adaptive_weight)
+        if self.has_multiscale_discrs:
+
+            weighted_multiscale_gen_losses = sum(loss * weight for loss, weight in zip(multiscale_gen_losses, multiscale_gen_adaptive_weights))
+
+            total_loss = total_loss + weighted_multiscale_gen_losses * self.multiscale_adversarial_loss_weight
+
+        # loss breakdown
+
+        loss_breakdown = LossBreakdown(
+            recon_loss,
+            aux_losses,
+            *lfq_loss_breakdown,
+            perceptual_loss,
+            gen_loss,
+            adaptive_weight,
+            multiscale_gen_losses,
+            multiscale_gen_adaptive_weights
+        )
+
+        return total_loss, loss_breakdown
 
 # main class
 
