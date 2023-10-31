@@ -853,6 +853,7 @@ LossBreakdown = namedtuple('LossBreakdown', [
 
 DiscrLossBreakdown = namedtuple('DiscrLossBreakdown', [
     'discr_loss',
+    'multiscale_discr_losses',
     'gradient_penalty'
 ])
 
@@ -1394,6 +1395,7 @@ class VideoTokenizer(Module):
 
             discr_loss_breakdown = DiscrLossBreakdown(
                 discr_loss,
+                multiscale_discr_losses,
                 gradient_penalty_loss
             )
 

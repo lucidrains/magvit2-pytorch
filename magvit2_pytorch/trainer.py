@@ -151,6 +151,17 @@ class VideoTokenizerTrainer(Module):
             self.discr_optimizer
         )
 
+        # multiscale discr losses
+
+        self.has_multiscale_discrs = self.model.has_multiscale_discrs
+        self.multiscale_discr_optimizers = []
+
+        for ind, discr in enumerate(self.model.multiscale_discrs):
+            multiscale_optimizer = get_optimizer(discr.parameters(), **optimizer_kwargs)
+            self.multiscale_discr_optimizers.append(multiscale_optimizer)
+
+        self.multiscale_discr_optimizers = self.accelerator.prepare(*self.multiscale_discr_optimizers)
+
         # checkpoints and sampled results folder
 
         checkpoints_folder = Path(checkpoints_folder)
@@ -205,6 +216,9 @@ class VideoTokenizerTrainer(Module):
             discr_optimizer = self.discr_optimizer.state_dict()
         )
 
+        for ind, opt in enumerate(self.multiscale_discr_optimizers):
+            pkg[f'multiscale_discr_optimizer_{ind}'] = opt.state_dict()
+
         torch.save(pkg, str(path))
 
     def load(self, path):
@@ -217,6 +231,9 @@ class VideoTokenizerTrainer(Module):
         self.ema_model.load_state_dict(pkg['ema_model'])
         self.optimizer.load_state_dict(pkg['optimizer'])
         self.discr_optimizer.load_state_dict(pkg['discr_optimizer'])
+
+        for ind, opt in enumerate(self.multiscale_discr_optimizers):
+            opt.load_state_dict(pkg[f'multiscale_discr_optimizer_{ind}'])
 
     def train_step(self, dl_iter):
         self.model.train()
@@ -252,7 +269,7 @@ class VideoTokenizerTrainer(Module):
 
         self.wait()
 
-        # discriminator
+        # discriminator and multiscale discriminators
 
         apply_gradient_penalty = not (step % self.apply_gradient_penalty_every)
 
@@ -272,8 +289,17 @@ class VideoTokenizerTrainer(Module):
         if exists(self.max_grad_norm):
             self.accelerator.clip_grad_norm_(self.discr_model.parameters(), self.max_grad_norm)
 
+            if self.has_multiscale_discrs:
+                for multiscale_discr in self.model.multiscale_discrs:
+                    self.accelerator.clip_grad_norm_(multiscale_discr.parameters(), self.max_grad_norm)
+
         self.discr_optimizer.step()
         self.discr_optimizer.zero_grad()
+
+        if self.has_multiscale_discrs:
+            for multiscale_discr_optimizer in self.multiscale_discr_optimizers:
+                multiscale_discr_optimizer.step()
+                multiscale_discr_optimizer.zero_grad()
 
         # update train step
 

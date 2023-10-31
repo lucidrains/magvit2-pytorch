@@ -86,8 +86,8 @@ assert torch.allclose(
     - [x] add trainer and manage discriminator training
     - [x] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
         - [x] complete multiscale discriminator losses
-        - [ ] auto-manage multiscale discriminator optimizers
-        - [ ] helper functions for temporal discrimination (picking random consecutive frames)
+        - [x] auto-manage multiscale discriminator optimizers
+        - [ ] helper functions for crafting multi-resolution temporal discriminators (picking random consecutive frames)
     - [ ] add adaptive rmsnorm
     - [ ] add attention
         - [ ] use axial rotary embeddings for spatial
