@@ -1402,7 +1402,7 @@ class VideoTokenizer(Module):
 
             total_loss = discr_loss + \
                 gradient_penalty_loss * self.grad_penalty_loss_weight + \
-                sum(multiscale_discr_losses)
+                sum(multiscale_discr_losses) * self.multiscale_adversarial_loss_weight
 
             discr_loss_breakdown = DiscrLossBreakdown(
                 discr_loss,
