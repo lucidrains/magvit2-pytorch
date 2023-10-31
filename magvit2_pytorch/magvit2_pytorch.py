@@ -913,6 +913,7 @@ class VideoTokenizer(Module):
         dim = init_dim
         dim_out = dim
 
+        layer_fmap_size = image_size
         time_downsample_factor = 1
         has_cond = False
 
@@ -941,6 +942,9 @@ class VideoTokenizer(Module):
                 dim_out, = layer_params
                 encoder_layer = SpatialDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = SpatialUpsample2x(dim_out, dim)
+
+                assert layer_fmap_size > 1
+                layer_fmap_size //= 2
 
             elif layer_type == 'compress_time':
                 dim_out, = layer_params
@@ -1017,6 +1021,8 @@ class VideoTokenizer(Module):
 
         self.time_downsample_factor = time_downsample_factor
         self.time_padding = time_downsample_factor - 1
+
+        self.fmap_size = layer_fmap_size
 
         # use a MLP stem for conditioning, if needed
 
@@ -1209,6 +1215,12 @@ class VideoTokenizer(Module):
         cond: Optional[Tensor] = None
     ):
         assert codes.dtype == torch.long
+
+        if codes.ndim == 2:
+            video_code_len = codes.shape[-1]
+            assert divisible_by(video_code_len, self.fmap_size ** 2), f'flattened video ids must have a length ({video_code_len}) that is divisible by the fmap size ({self.fmap_size}) squared ({self.fmap_size ** 2})'
+
+            codes = rearrange(codes, 'b (f h w) -> b f h w', h = self.fmap_size, w = self.fmap_size)
 
         quantized = self.quantizers.indices_to_codes(codes)
         out = self.decode(quantized, cond = cond)
