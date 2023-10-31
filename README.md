@@ -82,13 +82,13 @@ assert torch.allclose(
     - [x] implement the blurpool for antialiasing in discriminator
     - [x] LFQ should be able to pass loss breakdown (commitment and entropy), and forwarded to the return of the tokenizer
     - [x] add conditioning for encoder decoder with residual modulatable conv 3d
+    - [x] `decode_from_codebook_indices` should be able to accept flattened ids and reshape to correct feature map dimensions and decode back to video
     - [ ] add adaptive rmsnorm
     - [ ] add trainer and manage discriminator training
     - [ ] completely generalize to multiple discriminators at different time scales (taking inspiration of multi-resolution discriminators from soundstream)
     - [ ] add attention
         - [ ] use axial rotary embeddings for spatial
     - [ ] add an optional autoregressive loss at some penultimate layer of the decoder - check literature to see if anyone else has done this unification of transformer decoder + tokenizer in one architecture
-    - [ ] `decode_from_codebook_indices` should be able to accept flattened ids and reshape to correct feature map dimensions and decode back to video
 - [ ] Improvise a <a href="https://arxiv.org/abs/2203.01941">RQ Video Transformer</a>, as residual LFQ actually makes sense now
 
 - [ ] MaskGit
