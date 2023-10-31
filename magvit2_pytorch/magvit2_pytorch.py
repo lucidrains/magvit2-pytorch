@@ -889,7 +889,7 @@ class VideoTokenizer(Module):
         perceptual_loss_weight = 1.,
         antialiased_downsample = True,
         discr_kwargs: Optional[dict] = None,
-        multiscale_discrs: Optional[Tuple[Module, ...]] = None,
+        multiscale_discrs: Tuple[Module, ...] = tuple(),
         use_gan = True,
         adversarial_loss_weight = 1.,
         grad_penalty_loss_weight = 10.,
