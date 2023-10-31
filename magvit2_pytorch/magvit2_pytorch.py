@@ -1226,7 +1226,8 @@ class VideoTokenizer(Module):
     def decode_from_code_indices(
         self,
         codes: Tensor,
-        cond: Optional[Tensor] = None
+        cond: Optional[Tensor] = None,
+        video_contains_first_frame = True
     ):
         assert codes.dtype == torch.long
 
@@ -1238,7 +1239,11 @@ class VideoTokenizer(Module):
 
         quantized = self.quantizers.indices_to_codes(codes)
         out = self.decode(quantized, cond = cond)
-        return out[:, :, self.time_padding:]
+
+        if video_contains_first_frame:
+            out = out[:, :, self.time_padding:]
+
+        return out
 
     @beartype
     def decode(
@@ -1289,7 +1294,8 @@ class VideoTokenizer(Module):
         return_recon = False,
         return_discr_loss = False,
         return_recon_loss_only = False,
-        apply_gradient_penalty = True
+        apply_gradient_penalty = True,
+        video_contains_first_frame = True
     ):
         assert (return_loss + return_codes + return_discr_loss) <= 1
         assert video_or_images.ndim in {4, 5}
@@ -1298,18 +1304,22 @@ class VideoTokenizer(Module):
 
         # accept images for image pretraining (curriculum learning from images to video)
 
-        if video_or_images.ndim == 4:
+        is_image = video_or_images.ndim == 4
+
+        if is_image:
             video = rearrange(video_or_images, 'b c ... -> b c 1 ...')
+            video_contains_first_frame = True
         else:
             video = video_or_images
 
         batch, frames = video.shape[0], video.shape[2]
 
-        assert divisible_by(frames - 1, self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - 1}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
+        assert divisible_by(frames - int(video_contains_first_frame), self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - 1}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
 
         # pad the time, accounting for total time downsample factor, so that images can be trained independently
 
-        padded_video = pad_at_dim(video, (self.time_padding, 0), value = 0., dim = 2)
+        if video_contains_first_frame:
+            padded_video = pad_at_dim(video, (self.time_padding, 0), value = 0., dim = 2)
 
         # encoder
 
@@ -1326,7 +1336,8 @@ class VideoTokenizer(Module):
 
         padded_recon_video = self.decode(quantized, cond = cond)
 
-        recon_video = padded_recon_video[:, :, self.time_padding:]
+        if video_contains_first_frame:
+            recon_video = padded_recon_video[:, :, self.time_padding:]
 
         if return_codes:
             return codes, recon_video
