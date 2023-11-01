@@ -177,7 +177,8 @@ class RMSNorm(Module):
         self,
         dim,
         channel_first = False,
-        images = False
+        images = False,
+        bias = False
     ):
         super().__init__()
         broadcastable_dims = (1, 1, 1) if not images else (1, 1)
@@ -186,9 +187,44 @@ class RMSNorm(Module):
         self.channel_first = channel_first
         self.scale = dim ** 0.5
         self.gamma = nn.Parameter(torch.ones(shape))
+        self.bias = nn.Parameter(torch.zeros(shape)) if bias else 0.
 
     def forward(self, x):
-        return F.normalize(x, dim = (1 if self.channel_first else -1)) * self.scale * self.gamma
+        return F.normalize(x, dim = (1 if self.channel_first else -1)) * self.scale * self.gamma + self.bias
+
+class AdaptiveRMSNorm(Module):
+    def __init__(
+        self,
+        dim,
+        *,
+        dim_cond,
+        channel_first = False,
+        images = False,
+        bias = False
+    ):
+        super().__init__()
+        broadcastable_dims = (1, 1, 1) if not images else (1, 1)
+        shape = (dim, *broadcastable_dims) if channel_first else (dim,)
+
+        self.dim_cond = dim_cond
+        self.channel_first = channel_first
+        self.scale = dim ** 0.5
+
+        self.to_gamma = nn.Linear(dim_cond, dim)
+        self.to_bias = nn.Linear(dim_cond, dim) if bias else None
+
+    @beartype
+    def forward(self, x: Tensor, *, cond: Tensor):
+        batch = x.shape[0]
+        assert cond.shape == (batch, self.dim_cond)
+
+        gamma = self.to_gamma(cond)
+
+        bias = 0.
+        if exists(self.to_bias):
+            bias = self.to_bias(cond)
+
+        return F.normalize(x, dim = (1 if self.channel_first else -1)) * self.scale * gamma + bias
 
 # attention
 
