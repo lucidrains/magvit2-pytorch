@@ -245,10 +245,12 @@ class AdaptiveRMSNorm(Module):
 # attention
 
 class Attention(Module):
+    @beartype
     def __init__(
         self,
         *,
         dim,
+        dim_cond: Optional[int] = None,
         causal = False,
         dim_head = 32,
         heads = 8,
@@ -258,8 +260,15 @@ class Attention(Module):
     ):
         super().__init__()
         dim_inner = dim_head * heads
+
+        self.need_cond = exists(dim_cond)
+
+        if self.need_cond:
+            self.norm = AdaptiveRMSNorm(dim, dim_cond = dim_cond)
+        else:
+            self.norm = RMSNorm(dim)
+
         self.to_qkv = nn.Sequential(
-            RMSNorm(dim),
             nn.Linear(dim, dim_inner * 3, bias = False),
             Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = heads)
         )
@@ -278,7 +287,17 @@ class Attention(Module):
             nn.Linear(dim_inner, dim, bias = False)
         )
 
-    def forward(self, x, mask = None):
+    @beartype
+    def forward(
+        self,
+        x,
+        mask: Optional[Tensor ] = None,
+        cond: Optional[Tensor] = None
+    ):
+        maybe_cond_kwargs = dict(cond = cond) if self.need_cond else dict()
+
+        x = self.norm(x, **maybe_cond_kwargs)
+
         q, k, v = self.to_qkv(x)
 
         mk, mv = map(lambda t: repeat(t, 'h n d -> b h n d', b = q.shape[0]), self.mem_kv)
@@ -293,10 +312,12 @@ class LinearAttention(Module):
     using the specific linear attention proposed in https://arxiv.org/abs/2106.09681
     """
 
+    @beartype
     def __init__(
         self,
         *,
         dim,
+        dim_cond: Optional[int] = None,
         dim_head = 32,
         heads = 8,
         scale = 8,
@@ -305,8 +326,15 @@ class LinearAttention(Module):
     ):
         super().__init__()
         dim_inner = dim_head * heads
+
+        self.need_cond = exists(dim_cond)
+
+        if self.need_cond:
+            self.norm = AdaptiveRMSNorm(dim, dim_cond = dim_cond)
+        else:
+            self.norm = RMSNorm(dim)
+
         self.to_qkv = Sequential(
-            RMSNorm(dim),
             nn.Linear(dim, dim_inner * 3, bias = False),
             Rearrange('b n (qkv h d) -> qkv b h d n', qkv = 3, h = heads)
         )
@@ -325,7 +353,15 @@ class LinearAttention(Module):
             nn.Linear(dim_inner, dim)
         )
 
-    def forward(self, x):
+    def forward(
+        self,
+        x,
+        cond: Optional[Tensor] = None
+    ):
+        maybe_cond_kwargs = dict(cond = cond) if self.need_cond else dict()
+
+        x = self.norm(x, **maybe_cond_kwargs)
+
         q, k, v = self.to_qkv(x)
 
         q, k = map(l2norm, (q, k))
@@ -1007,10 +1043,12 @@ class VideoTokenizer(Module):
 
         layer_fmap_size = image_size
         time_downsample_factor = 1
-        has_cond = False
+        has_cond_across_layers = []
 
         for layer_def in layers:
             layer_type, *layer_params = cast_tuple(layer_def)
+
+            has_cond = False
 
             if layer_type == 'residual':
                 encoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
@@ -1110,6 +1148,7 @@ class VideoTokenizer(Module):
             self.decoder_layers.insert(0, decoder_layer)
 
             dim = dim_out
+            has_cond_across_layers.append(has_cond)
 
         self.time_downsample_factor = time_downsample_factor
         self.time_padding = time_downsample_factor - 1
@@ -1118,7 +1157,9 @@ class VideoTokenizer(Module):
 
         # use a MLP stem for conditioning, if needed
 
-        self.has_cond = has_cond
+        self.has_cond_across_layers = has_cond_across_layers
+        self.has_cond = any(has_cond_across_layers)
+
         self.encoder_cond_in = nn.Identity()
         self.decoder_cond_in = nn.Identity()
 
@@ -1293,10 +1334,11 @@ class VideoTokenizer(Module):
 
         # encoder layers
 
-        for fn in self.encoder_layers:
+        for fn, has_cond in zip(self.encoder_layers, self.has_cond_across_layers):
 
             layer_kwargs = dict()
-            if isinstance(fn, (ResidualUnitMod,)):
+
+            if has_cond:
                 layer_kwargs = cond_kwargs
 
             x = fn(x, **layer_kwargs)
@@ -1350,10 +1392,11 @@ class VideoTokenizer(Module):
 
         x = quantized
 
-        for fn in self.decoder_layers:
+        for fn, has_cond in zip(self.decoder_layers, reversed(self.has_cond_across_layers)):
 
             layer_kwargs = dict()
-            if isinstance(fn, (ResidualUnitMod,)):
+
+            if has_cond:
                 layer_kwargs = cond_kwargs
 
             x = fn(x, **layer_kwargs)
