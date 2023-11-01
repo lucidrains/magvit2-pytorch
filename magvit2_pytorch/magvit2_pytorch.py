@@ -1133,12 +1133,79 @@ class VideoTokenizer(Module):
 
                 encoder_layer = Sequential(
                     Residual(TokenShift(TimeAttention(**attn_kwargs))),
-                    Residual(TokenShift(FeedForward(dim)))
+                    Residual(TokenShift(FeedForward(dim, dim_cond = dim_cond)))
                 )
 
                 decoder_layer = Sequential(
                     Residual(TokenShift(TimeAttention(**attn_kwargs))),
-                    Residual(TokenShift(FeedForward(dim)))
+                    Residual(TokenShift(FeedForward(dim, dim_cond = dim_cond)))
+                )
+
+            elif layer_type == 'cond_attend_space':
+                has_cond = True
+
+                attn_kwargs = dict(
+                    dim = dim,
+                    dim_cond = dim_cond,
+                    dim_head = attn_dim_head,
+                    heads = attn_heads,
+                    dropout = attn_dropout,
+                    flash = flash_attn
+                )
+
+                encoder_layer = Sequential(
+                    Residual(SpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
+
+                decoder_layer = Sequential(
+                    Residual(SpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim))
+                )
+
+            elif layer_type == 'cond_linear_attend_space':
+                has_cond = True
+
+                attn_kwargs = dict(
+                    dim = dim,
+                    dim_cond = dim_cond,
+                    dim_head = attn_dim_head,
+                    heads = attn_heads,
+                    dropout = attn_dropout,
+                    flash = flash_attn
+                )
+
+                encoder_layer = Sequential(
+                    Residual(LinearSpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim, dim_cond = dim_cond))
+                )
+
+                decoder_layer = Sequential(
+                    Residual(LinearSpaceAttention(**attn_kwargs)),
+                    Residual(FeedForward(dim, dim_cond = dim_cond))
+                )
+
+            elif layer_type == 'cond_attend_time':
+                has_cond = True
+
+                attn_kwargs = dict(
+                    dim = dim,
+                    dim_cond = dim_cond,
+                    dim_head = attn_dim_head,
+                    heads = attn_heads,
+                    dropout = attn_dropout,
+                    causal = True,
+                    flash = flash_attn
+                )
+
+                encoder_layer = Sequential(
+                    Residual(TokenShift(TimeAttention(**attn_kwargs))),
+                    Residual(TokenShift(FeedForward(dim, dim_cond = dim_cond)))
+                )
+
+                decoder_layer = Sequential(
+                    Residual(TokenShift(TimeAttention(**attn_kwargs))),
+                    Residual(TokenShift(FeedForward(dim, dim_cond = dim_cond)))
                 )
 
             else:
