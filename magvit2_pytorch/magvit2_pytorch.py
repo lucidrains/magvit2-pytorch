@@ -52,6 +52,9 @@ def pack_one(t, pattern):
 def unpack_one(t, ps, pattern):
     return unpack(t, ps, pattern)[0]
 
+def append_dims(t, ndims: int):
+    return t.reshape(*t.shape, *((1,) * ndims))
+
 def is_odd(n):
     return not divisible_by(n, 2)
 
@@ -213,6 +216,13 @@ class AdaptiveRMSNorm(Module):
         self.to_gamma = nn.Linear(dim_cond, dim)
         self.to_bias = nn.Linear(dim_cond, dim) if bias else None
 
+        nn.init.zeros_(self.to_gamma.weight)
+        nn.init.ones_(self.to_gamma.bias)
+
+        if bias:
+            nn.init.zeros_(self.to_bias.weight)
+            nn.init.zeros_(self.to_bias.bias)
+
     @beartype
     def forward(self, x: Tensor, *, cond: Tensor):
         batch = x.shape[0]
@@ -223,6 +233,12 @@ class AdaptiveRMSNorm(Module):
         bias = 0.
         if exists(self.to_bias):
             bias = self.to_bias(cond)
+
+        if self.channel_first:
+            gamma = append_dims(gamma, x.ndim - 2)
+
+            if exists(self.to_bias):
+                bias = append_dims(bias, x.ndim - 2)
 
         return F.normalize(x, dim = (1 if self.channel_first else -1)) * self.scale * gamma + bias
 
@@ -353,18 +369,49 @@ class TimeAttention(Attention):
         x = unpack_one(x, batch_ps, '* t c')
         return rearrange(x, 'b h w t c -> b c t h w')
 
-def FeedForward(dim, mult = 4, images = False):
-    conv_klass = nn.Conv2d if images else nn.Conv3d
-    norm_klass = partial(RMSNorm, channel_first = True, images = images)
-    dim_inner = dim * mult
+class GEGLU(Module):
+    def forward(self, x):
+        x, gate = x.chunk(2, dim = 1)
+        return F.gelu(gate) * x
 
-    return Sequential(
-        norm_klass(dim, channel_first = True, images = images),
-        conv_klass(dim, dim_inner, 1),
-        nn.GELU(),
-        norm_klass(dim_inner, channel_first = True),
-        conv_klass(dim_inner, dim, 1)
-    )
+class FeedForward(Module):
+    @beartype
+    def __init__(
+        self,
+        dim,
+        *,
+        dim_cond: Optional[int] = None,
+        mult = 4,
+        images = False
+    ):
+        super().__init__()
+        conv_klass = nn.Conv2d if images else nn.Conv3d
+
+        rmsnorm_klass = RMSNorm if not exists(dim_cond) else partial(AdaptiveRMSNorm, dim_cond = dim_cond)
+
+        maybe_adaptive_norm_klass = partial(rmsnorm_klass, channel_first = True, images = images)
+
+        dim_inner = int(dim * mult * 2 / 3)
+
+        self.norm = maybe_adaptive_norm_klass(dim)
+
+        self.net = Sequential(
+            conv_klass(dim, dim_inner * 2, 1),
+            GEGLU(),
+            conv_klass(dim_inner, dim, 1)
+        )
+
+    @beartype
+    def forward(
+        self,
+        x: Tensor,
+        *,
+        cond: Optional[Tensor] = None
+    ):
+        maybe_cond_kwargs = dict(cond = cond) if exists(cond) else dict()
+
+        x = self.norm(x, **maybe_cond_kwargs)
+        return self.net(x)
 
 # discriminator with anti-aliased downsampling (blurpool Zhang et al.)
 
