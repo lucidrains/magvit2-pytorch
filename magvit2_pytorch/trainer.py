@@ -160,7 +160,8 @@ class VideoTokenizerTrainer(Module):
             multiscale_optimizer = get_optimizer(discr.parameters(), **optimizer_kwargs)
             self.multiscale_discr_optimizers.append(multiscale_optimizer)
 
-        self.multiscale_discr_optimizers = self.accelerator.prepare(*self.multiscale_discr_optimizers)
+        if self.has_multiscale_discrs:
+            self.multiscale_discr_optimizers = self.accelerator.prepare(*self.multiscale_discr_optimizers)
 
         # checkpoints and sampled results folder
 
@@ -316,6 +317,9 @@ class VideoTokenizerTrainer(Module):
 
         recon_loss = 0.
 
+        valid_videos = []
+        recon_videos = []
+
         for _ in range(self.grad_accum_every):
             valid_video, = next(dl_iter)
 
@@ -326,22 +330,31 @@ class VideoTokenizerTrainer(Module):
 
             recon_loss += loss / self.grad_accum_every
 
-            if not save_recons:
-                continue
+            if valid_video.ndim == 4:
+                valid_video = rearrange(valid_video, 'b c h w -> b c 1 h w')
 
-            valid_video, recon_video = map(lambda t: t[:num_save_recons], (valid_video, recon_video))
-
-            real_and_recon = rearrange([valid_video, recon_video], 'n b c f h w -> c f (b h) (n w)')
-
-            validate_step = self.step.item() // self.validate_every_step
-
-            sample_path = str(self.results_folder / f'sampled.{validate_step}.gif')
-
-            video_tensor_to_gif(real_and_recon, str(sample_path))
-
-            print(f'sample saved to {str(sample_path)}')
+            valid_videos.append(valid_video)
+            recon_videos.append(recon_video)
 
         self.print(f'validation loss {recon_loss:.3f}')
+
+        if not save_recons:
+            return
+
+        valid_videos = torch.cat(valid_videos)
+        recon_videos = torch.cat(recon_videos)
+
+        valid_videos, recon_videos = map(lambda t: t[:num_save_recons], (valid_videos, recon_videos))
+
+        real_and_recon = rearrange([valid_videos, recon_videos], 'n b c f h w -> c f (b h) (n w)')
+
+        validate_step = self.step.item() // self.validate_every_step
+
+        sample_path = str(self.results_folder / f'sampled.{validate_step}.gif')
+
+        video_tensor_to_gif(real_and_recon, str(sample_path))
+
+        self.print(f'sample saved to {str(sample_path)}')
 
     def train(self):
 

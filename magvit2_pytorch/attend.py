@@ -109,6 +109,8 @@ class Attend(nn.Module):
     ):
         batch, heads, q_len, _, k_len, is_cuda, device = *q.shape, k.shape[-2], q.is_cuda, q.device
 
+        q, k, v = map(lambda t: t.contiguous(), (q, k, v))
+
         # manage scale, since scale is not customizable in sdp, hack around it
 
         if exists(self.scale):
