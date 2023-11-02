@@ -1353,6 +1353,7 @@ class VideoTokenizer(Module):
             *self.decoder_layers.parameters(),
             *self.encoder_cond_in.parameters(),
             *self.decoder_cond_in.parameters(),
+            *self.quantizers.parameters()
         ]
 
     def discr_parameters(self):

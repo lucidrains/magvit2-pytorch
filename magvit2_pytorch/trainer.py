@@ -253,7 +253,7 @@ class VideoTokenizerTrainer(Module):
 
             self.accelerator.backward(loss / self.grad_accum_every)
 
-        self.print(f'loss: {loss.item():.3f}')
+        self.print(f'recon loss: {loss_breakdown.recon_loss.item():.3f}')
 
         if exists(self.max_grad_norm):
             self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
@@ -336,7 +336,7 @@ class VideoTokenizerTrainer(Module):
             valid_videos.append(valid_video)
             recon_videos.append(recon_video)
 
-        self.print(f'validation loss {recon_loss:.3f}')
+        self.print(f'validation recon loss {recon_loss:.3f}')
 
         if not save_recons:
             return
