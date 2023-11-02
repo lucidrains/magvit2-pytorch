@@ -90,7 +90,7 @@ class VideoTokenizerTrainer(Module):
 
         if self.is_main:
             self.ema_model = EMA(
-                model.copy_for_eval(),
+                model,
                 include_online_model = False,
                 **ema_kwargs
             )
@@ -362,7 +362,9 @@ class VideoTokenizerTrainer(Module):
         num_save_recons = 1
     ):
         self.ema_model.eval()
-        self.ema_model.to(self.device)
+
+        orig_ema_device = self.ema_model.ema_model.device
+        self.ema_model.ema_model.to(self.device)
 
         recon_loss = 0.
         ema_recon_loss = 0.
@@ -385,6 +387,8 @@ class VideoTokenizerTrainer(Module):
 
             valid_videos.append(valid_video.cpu())
             recon_videos.append(ema_recon_video.cpu())
+
+        self.ema_model.ema_model.to(orig_ema_device)
 
         self.log(
             valid_recon_loss = recon_loss.item(),
