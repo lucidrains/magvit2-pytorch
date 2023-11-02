@@ -75,6 +75,8 @@ class VideoTokenizerTrainer(Module):
     ):
         super().__init__()
 
+        self.use_wandb_tracking = use_wandb_tracking
+
         if use_wandb_tracking:
             accelerate_kwargs['log_with'] = 'wandb'
 
@@ -195,9 +197,16 @@ class VideoTokenizerTrainer(Module):
     def trackers(
         self,
         project_name: str,
+        run_name: Optional[str] = None,
         hps: Optional[dict] = None
     ):
+        assert self.use_wandb_tracking
+
         self.accelerator.init_trackers(project_name, config = hps)
+
+        if exists(run_name):
+            self.accelerator.trackers[0].run.name = run_name
+
         yield
         self.accelerator.end_training()
 
