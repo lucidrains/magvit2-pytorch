@@ -52,6 +52,7 @@ class VideoTokenizerTrainer(Module):
         *,
         batch_size: int,
         num_train_steps: int,
+        learning_rate: float = 1e-4,
         grad_accum_every: int = 1,
         apply_gradient_penalty_every: int = 4,
         max_grad_norm: Optional[float] = None,
@@ -124,8 +125,8 @@ class VideoTokenizerTrainer(Module):
 
         # optimizers
 
-        self.optimizer = get_optimizer(model.parameters(), **optimizer_kwargs)
-        self.discr_optimizer = get_optimizer(model.discr_parameters(), **optimizer_kwargs)
+        self.optimizer = get_optimizer(model.parameters(), lr = learning_rate, **optimizer_kwargs)
+        self.discr_optimizer = get_optimizer(model.discr_parameters(), lr = learning_rate, **optimizer_kwargs)
 
         # training related params
 
@@ -157,7 +158,8 @@ class VideoTokenizerTrainer(Module):
         self.multiscale_discr_optimizers = []
 
         for ind, discr in enumerate(self.model.multiscale_discrs):
-            multiscale_optimizer = get_optimizer(discr.parameters(), **optimizer_kwargs)
+            multiscale_optimizer = get_optimizer(discr.parameters(), lr = learning_rate, **optimizer_kwargs)
+
             self.multiscale_discr_optimizers.append(multiscale_optimizer)
 
         if self.has_multiscale_discrs:
@@ -285,7 +287,7 @@ class VideoTokenizerTrainer(Module):
 
             self.accelerator.backward(discr_loss / self.grad_accum_every)
 
-        self.print(f'discr loss: {discr_loss.item():.3f}')
+        self.print(f'discr loss: {discr_loss_breakdown.discr_loss.item():.3f}')
 
         if exists(self.max_grad_norm):
             self.accelerator.clip_grad_norm_(self.discr_model.parameters(), self.max_grad_norm)
@@ -343,6 +345,8 @@ class VideoTokenizerTrainer(Module):
 
         valid_videos = torch.cat(valid_videos)
         recon_videos = torch.cat(recon_videos)
+
+        recon_videos.clamp_(min = 0., max = 1.)
 
         valid_videos, recon_videos = map(lambda t: t[:num_save_recons], (valid_videos, recon_videos))
 
