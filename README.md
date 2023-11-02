@@ -12,6 +12,8 @@ Please join <a href="https://discord.gg/xBPBXfcFHd"><img alt="Join us on Discord
 
 - <a href="https://stability.ai/">StabilityAI</a> and <a href="https://huggingface.co/">🤗 Huggingface</a> for the generous sponsorship, as well as my other sponsors, for affording me the independence to open source artificial intelligence.
 
+- <a href="https://github.com/LouisSerrano">Louis Serrano</a> for sharing some early initial runs, validating that the overall architecture converges with finite scalar quantization.
+
 ## Install
 
 ```bash

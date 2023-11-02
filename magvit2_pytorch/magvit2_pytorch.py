@@ -14,13 +14,13 @@ from torchvision.models import VGG16_Weights
 
 from collections import namedtuple
 
-from vector_quantize_pytorch import LFQ
+from vector_quantize_pytorch import LFQ, FSQ
 
 from einops import rearrange, repeat, reduce, pack, unpack
 from einops.layers.torch import Rearrange
 
 from beartype import beartype
-from beartype.typing import Union, Tuple, Optional
+from beartype.typing import Union, Tuple, Optional, List
 
 from magvit2_pytorch.attend import Attend
 from magvit2_pytorch.version import __version__
@@ -965,9 +965,7 @@ class CausalConvTranspose3d(Module):
 LossBreakdown = namedtuple('LossBreakdown', [
     'recon_loss',
     'lfq_aux_loss',
-    'lfq_per_sample_entropy_loss',
-    'lfq_batch_entropy_loss',
-    'lfq_commitment_loss',
+    'quantizer_loss_breakdown',
     'perceptual_loss',
     'gen_loss',
     'adaptive_adversarial_weight',
@@ -1006,8 +1004,10 @@ class VideoTokenizer(Module):
         lfq_entropy_loss_weight = 0.1,
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 2.5,
-        lfq_aux_loss_weight = 1.,
+        quantizer_aux_loss_weight = 1.,
         lfq_activation = nn.Identity(),
+        use_fsq = False,
+        fsq_levels: List[int] = [8, 5, 5, 5],
         attn_dim_head = 32,
         attn_heads = 8,
         attn_dropout = 0.,
@@ -1256,19 +1256,37 @@ class VideoTokenizer(Module):
                 nn.SiLU()
             )
 
-        # lookup free quantizer(s) - multiple codebooks is possible
-        # each codebook will get its own entropy regularization
+        # quantizer related
 
-        self.quantizers = LFQ(
-            dim = dim,
-            codebook_size = codebook_size,
-            num_codebooks = num_codebooks,
-            entropy_loss_weight = lfq_entropy_loss_weight,
-            commitment_loss_weight = lfq_commitment_loss_weight,
-            diversity_gamma = lfq_diversity_gamma
-        )
+        self.use_fsq = use_fsq
 
-        self.lfq_aux_loss_weight = lfq_aux_loss_weight
+        if not use_fsq:
+            # lookup free quantizer(s) - multiple codebooks is possible
+            # each codebook will get its own entropy regularization
+
+            self.quantizers = LFQ(
+                dim = dim,
+                codebook_size = codebook_size,
+                num_codebooks = num_codebooks,
+                entropy_loss_weight = lfq_entropy_loss_weight,
+                commitment_loss_weight = lfq_commitment_loss_weight,
+                diversity_gamma = lfq_diversity_gamma
+            )
+
+        else:
+            assert num_codebooks == 1, 'FSQ can only use one codebook for now'
+
+            fsq_dim = len(fsq_levels)
+
+            self.quantizers = Sequential(
+                Rearrange('b c ... -> b ... c'),
+                nn.Linear(dim, fsq_dim),
+                FSQ(fsq_levels),
+                nn.Linear(fsq_dim, dim),
+                Rearrange('b ... c -> b c ...'),
+            )
+
+        self.quantizer_aux_loss_weight = quantizer_aux_loss_weight
 
         # dummy loss
 
@@ -1533,7 +1551,13 @@ class VideoTokenizer(Module):
 
         # lookup free quantization
 
-        (quantized, codes, aux_losses), lfq_loss_breakdown = self.quantizers(x, return_loss_breakdown = True)
+        if self.use_fsq:
+            quantized, codes = self.quantizers(x)
+
+            aux_losses = self.zero
+            quantizer_loss_breakdown = None
+        else:
+            (quantized, codes, aux_losses), quantizer_loss_breakdown = self.quantizers(x, return_loss_breakdown = True)
 
         if return_codes and not return_recon:
             return codes
@@ -1684,7 +1708,7 @@ class VideoTokenizer(Module):
         # calculate total loss
 
         total_loss = recon_loss \
-            + aux_losses * self.lfq_aux_loss_weight \
+            + aux_losses * self.quantizer_aux_loss_weight \
             + perceptual_loss * self.perceptual_loss_weight \
             + gen_loss * adaptive_weight * self.adversarial_loss_weight
 
@@ -1699,7 +1723,7 @@ class VideoTokenizer(Module):
         loss_breakdown = LossBreakdown(
             recon_loss,
             aux_losses,
-            *lfq_loss_breakdown,
+            quantizer_loss_breakdown,
             perceptual_loss,
             gen_loss,
             adaptive_weight,
