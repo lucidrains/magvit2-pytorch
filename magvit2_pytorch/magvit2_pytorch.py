@@ -999,7 +999,7 @@ class VideoTokenizer(Module):
         pad_mode: str = 'reflect',
         lfq_entropy_loss_weight = 0.1,
         lfq_commitment_loss_weight = 1.,
-        lfq_diversity_gamma = 1.,
+        lfq_diversity_gamma = 2.5,
         lfq_aux_loss_weight = 1.,
         lfq_activation = nn.Identity(),
         attn_dim_head = 32,
