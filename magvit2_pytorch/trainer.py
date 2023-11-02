@@ -92,7 +92,7 @@ class VideoTokenizerTrainer(Module):
                 dataset_klass = VideoDataset
                 dataset_kwargs = {**dataset_kwargs, 'num_frames': num_frames}
             else:
-                dataset_klass = ImageDatset
+                dataset_klass = ImageDataset
 
             assert exists(dataset_folder)
             dataset = dataset_klass(dataset_folder, image_size = model.image_size, **dataset_kwargs)
