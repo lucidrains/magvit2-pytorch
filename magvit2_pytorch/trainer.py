@@ -309,6 +309,7 @@ class VideoTokenizerTrainer(Module):
         self.wait()
 
         if self.is_main:
+            self.ema_model.to(self.device)
             self.ema_model.update()
 
         self.wait()
