@@ -1,6 +1,6 @@
 <img src="./magvit2.png" width="400px"></img>
 
-## MagViT2 - Pytorch
+## MagViT2 - Pytorch (wip)
 
 Implementation of MagViT2 from <a href="https://arxiv.org/abs/2310.05737">Language Model Beats Diffusion - Tokenizer is Key to Visual Generation</a> in Pytorch. This currently holds SOTA for video generation / understanding.
 
