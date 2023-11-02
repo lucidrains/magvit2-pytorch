@@ -1013,7 +1013,6 @@ class VideoTokenizer(Module):
         vgg: Optional[Module] = None,
         vgg_weights: VGG16_Weights = VGG16_Weights.DEFAULT,
         perceptual_loss_weight = 1.,
-        antialiased_downsample = True,
         discr_kwargs: Optional[dict] = None,
         multiscale_discrs: Tuple[Module, ...] = tuple(),
         use_gan = True,
@@ -1079,7 +1078,7 @@ class VideoTokenizer(Module):
                 dim_out = default(dim_out, dim * 2)
                 dim_out = min(dim_out, max_dim)
 
-                encoder_layer = SpatialDownsample2x(dim, dim_out, antialias = antialiased_downsample)
+                encoder_layer = SpatialDownsample2x(dim, dim_out)
                 decoder_layer = SpatialUpsample2x(dim_out, dim)
 
                 assert layer_fmap_size > 1
@@ -1090,7 +1089,7 @@ class VideoTokenizer(Module):
                 dim_out = default(dim_out, dim * 2)
                 dim_out = min(dim_out, max_dim)
 
-                encoder_layer = TimeDownsample2x(dim, dim_out, antialias = antialiased_downsample)
+                encoder_layer = TimeDownsample2x(dim, dim_out)
                 decoder_layer = TimeUpsample2x(dim_out, dim)
 
                 time_downsample_factor *= 2
