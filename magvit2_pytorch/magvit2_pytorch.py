@@ -1001,6 +1001,7 @@ class VideoTokenizer(Module):
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 1.,
         lfq_aux_loss_weight = 1.,
+        lfq_activation = nn.Identity(),
         attn_dim_head = 32,
         attn_heads = 8,
         attn_dropout = 0.,
