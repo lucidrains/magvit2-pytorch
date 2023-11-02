@@ -214,6 +214,10 @@ class VideoTokenizerTrainer(Module):
         self.accelerator.log(data_kwargs, step = self.step.item())
 
     @property
+    def device(self):
+        return self.unwrapped_model.device
+
+    @property
     def is_main(self):
         return self.accelerator.is_main_process
 
@@ -358,31 +362,37 @@ class VideoTokenizerTrainer(Module):
         num_save_recons = 1
     ):
         self.ema_model.eval()
+        self.ema_model.to(self.device)
 
         recon_loss = 0.
+        ema_recon_loss = 0.
 
         valid_videos = []
         recon_videos = []
 
         for _ in range(self.grad_accum_every):
             valid_video, = next(dl_iter)
+            valid_video = valid_video.to(self.device)
 
-            loss, recon_video = self.ema_model(
-                valid_video,
-                return_recon_loss_only = True
-            )
+            loss, _ = self.unwrapped_model(valid_video, return_recon_loss_only = True)
+            ema_loss, ema_recon_video = self.ema_model(valid_video, return_recon_loss_only = True)
 
             recon_loss += loss / self.grad_accum_every
+            ema_recon_loss += ema_loss / self.grad_accum_every
 
             if valid_video.ndim == 4:
                 valid_video = rearrange(valid_video, 'b c h w -> b c 1 h w')
 
-            valid_videos.append(valid_video)
-            recon_videos.append(recon_video)
+            valid_videos.append(valid_video.cpu())
+            recon_videos.append(ema_recon_video.cpu())
 
-        self.log(valid_recon_loss = recon_loss.item())
+        self.log(
+            valid_recon_loss = recon_loss.item(),
+            valid_ema_recon_loss = ema_recon_loss.item()
+        )
 
         self.print(f'validation recon loss {recon_loss:.3f}')
+        self.print(f'validation EMA recon loss {ema_recon_loss:.3f}')
 
         if not save_recons:
             return
