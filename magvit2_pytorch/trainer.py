@@ -380,6 +380,8 @@ class VideoTokenizerTrainer(Module):
             valid_videos.append(valid_video)
             recon_videos.append(recon_video)
 
+        self.log(valid_recon_loss = recon_loss.item())
+
         self.print(f'validation recon loss {recon_loss:.3f}')
 
         if not save_recons:
