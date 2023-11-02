@@ -872,12 +872,17 @@ def ResidualUnit(
     kernel_size: Union[int, Tuple[int, int, int]],
     pad_mode: str = 'reflect'
 ):
-    return Residual(Sequential(
+    net = Sequential(
         CausalConv3d(dim, dim, kernel_size, pad_mode = pad_mode),
         nn.ELU(),
         nn.Conv3d(dim, dim, 1),
         nn.ELU()
-    ))
+    )
+
+    nn.init.zeros_(net[-2].weight)
+    nn.init.zeros_(net[-2].bias)
+
+    return Residual(net)
 
 @beartype
 class ResidualUnitMod(Module):

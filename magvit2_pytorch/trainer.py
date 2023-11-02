@@ -191,7 +191,12 @@ class VideoTokenizerTrainer(Module):
         self.register_buffer('step', torch.tensor(0))
 
     @contextmanager
-    def trackers(self, project_name, hps = None):
+    @beartype
+    def trackers(
+        self,
+        project_name: str,
+        hps: Optional[dict] = None
+    ):
         self.accelerator.init_trackers(project_name, config = hps)
         yield
         self.accelerator.end_training()
