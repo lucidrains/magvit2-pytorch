@@ -85,6 +85,20 @@ assert torch.allclose(
 )
 ```
 
+To track your experiments on <a href="https://wandb.ai">Weights & Biases</a> set `use_wandb_tracking = True` on `VideoTokenizerTrainer`, and then use the `.trackers` context manager
+
+```python
+
+trainer = VideoTokenizerTrainer(
+    use_wandb_tracking = True,
+    ...
+)
+
+with trainer.trackers(project_name = 'magvit2', run_name = 'baseline'):
+    trainer.train()
+
+```
+
 ## Todo
 
 - [ ] Magvit2 Tokenizer
