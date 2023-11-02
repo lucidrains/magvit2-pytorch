@@ -1275,16 +1275,7 @@ class VideoTokenizer(Module):
 
         else:
             assert num_codebooks == 1, 'FSQ can only use one codebook for now'
-
-            fsq_dim = len(fsq_levels)
-
-            self.quantizers = Sequential(
-                Rearrange('b c ... -> b ... c'),
-                nn.Linear(dim, fsq_dim),
-                FSQ(fsq_levels),
-                nn.Linear(fsq_dim, dim),
-                Rearrange('b ... c -> b c ...'),
-            )
+            self.quantizers = FSQ(fsq_levels, dim = dim)
 
         self.quantizer_aux_loss_weight = quantizer_aux_loss_weight
 
@@ -1452,7 +1443,7 @@ class VideoTokenizer(Module):
         cond: Optional[Tensor] = None,
         video_contains_first_frame = True
     ):
-        assert codes.dtype == torch.long
+        assert codes.dtype in (torch.long, torch.int32)
 
         if codes.ndim == 2:
             video_code_len = codes.shape[-1]

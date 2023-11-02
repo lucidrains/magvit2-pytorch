@@ -28,7 +28,7 @@ setup(
     'opencv-python',
     'pillow',
     'numpy',
-    'vector-quantize-pytorch>=1.9.18',
+    'vector-quantize-pytorch>=1.10.7',
     'torch',
     'torchvision'
   ],
