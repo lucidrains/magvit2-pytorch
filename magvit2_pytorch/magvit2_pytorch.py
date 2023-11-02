@@ -966,7 +966,7 @@ LossBreakdown = namedtuple('LossBreakdown', [
     'lfq_aux_loss',
     'quantizer_loss_breakdown',
     'perceptual_loss',
-    'gen_loss',
+    'adversarial_gen_loss',
     'adaptive_adversarial_weight',
     'multiscale_gen_losses',
     'multiscale_gen_adaptive_weights'

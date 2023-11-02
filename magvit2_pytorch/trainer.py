@@ -1,4 +1,5 @@
 from pathlib import Path
+from contextlib import contextmanager
 
 import torch
 from torch import nn
@@ -52,7 +53,7 @@ class VideoTokenizerTrainer(Module):
         *,
         batch_size: int,
         num_train_steps: int,
-        learning_rate: float = 1e-4,
+        learning_rate: float = 1e-5,
         grad_accum_every: int = 1,
         apply_gradient_penalty_every: int = 4,
         max_grad_norm: Optional[float] = None,
@@ -66,12 +67,18 @@ class VideoTokenizerTrainer(Module):
         validate_every_step = 100,
         checkpoint_every_step = 100,
         num_frames = 17,
+        use_wandb_tracking = False,
         accelerate_kwargs: dict = dict(),
         ema_kwargs: dict = dict(),
         optimizer_kwargs: dict = dict(),
         dataset_kwargs: dict = dict()
     ):
         super().__init__()
+
+        if use_wandb_tracking:
+            accelerate_kwargs['log_with'] = 'wandb'
+
+        # instantiate accelerator
 
         self.accelerator = Accelerator(**accelerate_kwargs)
 
@@ -183,6 +190,15 @@ class VideoTokenizerTrainer(Module):
 
         self.register_buffer('step', torch.tensor(0))
 
+    @contextmanager
+    def trackers(self, project_name, hps = None):
+        self.accelerator.init_trackers(project_name, config = hps)
+        yield
+        self.accelerator.end_training()
+
+    def log(self, **data_kwargs):
+        self.accelerator.log(data_kwargs, step = self.step.item())
+
     @property
     def is_main(self):
         return self.accelerator.is_main_process
@@ -255,6 +271,13 @@ class VideoTokenizerTrainer(Module):
 
             self.accelerator.backward(loss / self.grad_accum_every)
 
+        self.log(
+            total_loss = loss.item(),
+            recon_loss = loss_breakdown.recon_loss.item(),
+            perceptual_loss = loss_breakdown.perceptual_loss.item(),
+            adversarial_gen_loss = loss_breakdown.adversarial_gen_loss.item(),
+        )
+
         self.print(f'recon loss: {loss_breakdown.recon_loss.item():.3f}')
 
         if exists(self.max_grad_norm):
@@ -286,6 +309,11 @@ class VideoTokenizerTrainer(Module):
             )
 
             self.accelerator.backward(discr_loss / self.grad_accum_every)
+
+        self.log(discr_loss = discr_loss_breakdown.discr_loss.item())
+
+        if apply_gradient_penalty:
+            self.log(gradient_penalty = discr_loss_breakdown.gradient_penalty.item())
 
         self.print(f'discr loss: {discr_loss_breakdown.discr_loss.item():.3f}')
 
