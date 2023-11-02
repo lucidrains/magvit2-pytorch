@@ -29,15 +29,16 @@ from magvit2_pytorch import (
 tokenizer = VideoTokenizer(
     image_size = 128,
     init_dim = 64,
+    max_dim = 512,
     layers = (
         'residual',
-        ('compress_space', 128),
+        'compress_space',
         'attend_space',
         'linear_attend_space',
         'residual',
         'residual',
         ('consecutive_residual', 3),
-        ('compress_time', 256),
+        'compress_time',
         'attend_time',
     )
 )

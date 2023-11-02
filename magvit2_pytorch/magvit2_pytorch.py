@@ -37,6 +37,11 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
+def safe_get_index(it, ind, default = None):
+    if ind < len(it):
+        return it[ind]
+    return default
+
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
 
@@ -992,6 +997,7 @@ class VideoTokenizer(Module):
         codebook_size = 8192,
         channels = 3,
         init_dim = 64,
+        max_dim = float('inf'),
         dim_cond = None,
         dim_cond_expansion_factor = 4.,
         input_conv_kernel_size: Tuple[int, int, int] = (7, 7, 7),
@@ -1070,7 +1076,10 @@ class VideoTokenizer(Module):
                 dim_out = dim
 
             elif layer_type == 'compress_space':
-                dim_out, = layer_params
+                dim_out = safe_get_index(layer_params, 0)
+                dim_out = default(dim_out, dim * 2)
+                dim_out = min(dim_out, max_dim)
+
                 encoder_layer = SpatialDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = SpatialUpsample2x(dim_out, dim)
 
@@ -1078,7 +1087,10 @@ class VideoTokenizer(Module):
                 layer_fmap_size //= 2
 
             elif layer_type == 'compress_time':
-                dim_out, = layer_params
+                dim_out = safe_get_index(layer_params, 0)
+                dim_out = default(dim_out, dim * 2)
+                dim_out = min(dim_out, max_dim)
+
                 encoder_layer = TimeDownsample2x(dim, dim_out, antialias = antialiased_downsample)
                 decoder_layer = TimeUpsample2x(dim_out, dim)
 
