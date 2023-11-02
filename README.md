@@ -33,12 +33,17 @@ tokenizer = VideoTokenizer(
     layers = (
         'residual',
         'compress_space',
-        'attend_space',
+        ('consecutive_residual', 2),
+        'compress_space',
+        ('consecutive_residual', 2),
         'linear_attend_space',
-        'residual',
-        'residual',
-        ('consecutive_residual', 3),
+        'compress_space',
+        ('consecutive_residual', 2),
+        'attend_space',
         'compress_time',
+        ('consecutive_residual', 2),
+        'compress_time',
+        ('consecutive_residual', 2),
         'attend_time',
     )
 )
@@ -61,11 +66,11 @@ ema_tokenizer = trainer.ema_tokenizer
 
 # mock video
 
-video = torch.randn(1, 3, 17, 32, 32)
+video = torch.randn(1, 3, 17, 128, 128)
 
 # tokenizing video to discrete codes
 
-codes = ema_tokenizer.tokenize(video) # (1, 9, 16, 16) <- time and space downsampled by 2x. flatten token ids for (non)-autoregressive training
+codes = ema_tokenizer.tokenize(video) # (1, 9, 16, 16) <- in this example, time downsampled by 4x and space downsampled by 8x. flatten token ids for (non)-autoregressive training
 
 # sanity check
 
