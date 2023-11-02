@@ -543,7 +543,6 @@ class Discriminator(Module):
         max_dim = 512,
         attn_heads = 8,
         attn_dim_head = 32,
-        attn_flash = True,
         ff_mult = 4,
         antialiased_downsample = True
     ):
@@ -580,7 +579,7 @@ class Discriminator(Module):
                     dim = out_chan,
                     heads = attn_heads,
                     dim_head = attn_dim_head,
-                    flash = attn_flash
+                    flash = False
                 )),
                 Residual(FeedForward(
                     dim = out_chan,
@@ -1322,7 +1321,12 @@ class VideoTokenizer(Module):
         self.multiscale_discrs = ModuleList([*multiscale_discrs])
 
         self.multiscale_adversarial_loss_weight = multiscale_adversarial_loss_weight
-        self.has_multiscale_discrs = use_gan and multiscale_adversarial_loss_weight > 0.
+
+        self.has_multiscale_discrs = (
+            use_gan and \
+            multiscale_adversarial_loss_weight > 0. and \
+            len(multiscale_discrs) > 0
+        )
 
     @property
     def device(self):
