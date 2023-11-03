@@ -1277,8 +1277,11 @@ class VideoTokenizer(Module):
             )
 
         else:
-            assert num_codebooks == 1, 'FSQ can only use one codebook for now'
-            self.quantizers = FSQ(fsq_levels, dim = dim)
+            self.quantizers = FSQ(
+                fsq_levels,
+                dim = dim,
+                num_codebooks = num_codebooks
+            )
 
         self.quantizer_aux_loss_weight = quantizer_aux_loss_weight
 
