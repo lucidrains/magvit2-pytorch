@@ -30,7 +30,8 @@ setup(
     'numpy',
     'vector-quantize-pytorch>=1.10.7',
     'torch',
-    'torchvision'
+    'torchvision',
+    'x-transformers'
   ],
   classifiers=[
     'Development Status :: 4 - Beta',
