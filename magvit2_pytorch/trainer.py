@@ -192,6 +192,10 @@ class VideoTokenizerTrainer(Module):
 
         self.register_buffer('step', torch.tensor(0))
 
+        # move ema to the proper device
+
+        self.ema_model.to(self.device)
+
     @contextmanager
     @beartype
     def trackers(
@@ -309,7 +313,6 @@ class VideoTokenizerTrainer(Module):
         self.wait()
 
         if self.is_main:
-            self.ema_model.to(self.device)
             self.ema_model.update()
 
         self.wait()
@@ -364,9 +367,6 @@ class VideoTokenizerTrainer(Module):
     ):
         self.ema_model.eval()
 
-        orig_ema_device = self.ema_model.ema_model.device
-        self.ema_model.ema_model.to(self.device)
-
         recon_loss = 0.
         ema_recon_loss = 0.
 
@@ -388,8 +388,6 @@ class VideoTokenizerTrainer(Module):
 
             valid_videos.append(valid_video.cpu())
             recon_videos.append(ema_recon_video.cpu())
-
-        self.ema_model.ema_model.to(orig_ema_device)
 
         self.log(
             valid_recon_loss = recon_loss.item(),
