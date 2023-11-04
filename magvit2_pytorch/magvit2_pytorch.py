@@ -1233,6 +1233,14 @@ class VideoTokenizer(Module):
             dim = dim_out
             has_cond_across_layers.append(has_cond)
 
+        # add a final norm just before quantization layer
+
+        self.encoder_layers.append(Sequential(
+            Rearrange('b c ... -> b ... c'),
+            nn.LayerNorm(dim),
+            Rearrange('b ... c -> b c ...'),
+        ))
+
         self.time_downsample_factor = time_downsample_factor
         self.time_padding = time_downsample_factor - 1
 

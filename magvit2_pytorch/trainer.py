@@ -425,6 +425,7 @@ class VideoTokenizerTrainer(Module):
         valid_dl_iter = cycle(self.valid_dataloader)
 
         while step < self.num_train_steps:
+            self.print(f'step {step}')
 
             self.train_step(dl_iter)
 
