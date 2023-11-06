@@ -61,6 +61,14 @@ def append_if_no_suffix(path: str, suffix: str):
 
     return str(path)
 
+# channel to image mode mapping
+
+CHANNEL_TO_MODE = {
+    1: 'L',
+    3: 'RGB',
+    4: 'RGBA'
+}
+
 # image related helpers fnuctions and dataset
 
 class ImageDataset(Dataset):
@@ -68,6 +76,7 @@ class ImageDataset(Dataset):
         self,
         folder,
         image_size,
+        channels = 3,
         convert_image_to = None,
         exts = ['jpg', 'jpeg', 'png']
     ):
@@ -80,6 +89,9 @@ class ImageDataset(Dataset):
         self.paths = [p for ext in exts for p in folder.glob(f'**/*.{ext}')]
 
         print(f'{len(self.paths)} training samples found at {folder}')
+
+        if exists(channels) and not exists(convert_image_to):
+            convert_image_to = CHANNEL_TO_MODE.get(channels)
 
         self.transform = T.Compose([
             T.Lambda(partial(convert_image_to_fn, convert_image_to)),
@@ -102,11 +114,7 @@ class ImageDataset(Dataset):
 # handle reading and writing gif
 
 def seek_all_images(img: Tensor, channels = 3):
-    mode = {
-        1 : 'L',
-        3 : 'RGB',
-        4 : 'RGBA'
-    }.get(channels)
+    mode = CHANNEL_TO_MODE.get(channels)
 
     assert exists(mode), f'channels {channels} invalid'
 

@@ -95,6 +95,8 @@ class VideoTokenizerTrainer(Module):
                 **ema_kwargs
             )
 
+        dataset_kwargs.update(channels = model.channels)
+
         # dataset
 
         if not exists(dataset):

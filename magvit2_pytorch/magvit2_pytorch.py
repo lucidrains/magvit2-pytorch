@@ -1037,6 +1037,7 @@ class VideoTokenizer(Module):
 
         # image size
 
+        self.channels = channels
         self.image_size = image_size
 
         # encoder
