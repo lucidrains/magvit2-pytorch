@@ -342,7 +342,7 @@ class VideoTokenizerTrainer(Module):
         self.print(f'discr loss: {discr_loss_breakdown.discr_loss.item():.3f}')
 
         if exists(self.max_grad_norm):
-            self.accelerator.clip_grad_norm_(self.discr_model.parameters(), self.max_grad_norm)
+            self.accelerator.clip_grad_norm_(self.model.discr_parameters(), self.max_grad_norm)
 
             if self.has_multiscale_discrs:
                 for multiscale_discr in self.model.multiscale_discrs:
