@@ -1,5 +1,6 @@
 from pathlib import Path
-from contextlib import contextmanager
+from functools import partial
+from contextlib import contextmanager, nullcontext
 
 import torch
 from torch import nn
@@ -285,15 +286,20 @@ class VideoTokenizerTrainer(Module):
 
         # main model
 
-        for _ in range(self.grad_accum_every):
+        for grad_accum_step in range(self.grad_accum_every):
+
+            is_last = grad_accum_step == (self.grad_accum_every - 1)
+            context = partial(self.accelerator.no_sync, self.model) if not is_last else nullcontext
+
             data, *_ = next(dl_iter)
 
-            loss, loss_breakdown = self.model(
-                data,
-                return_loss = True
-            )
+            with context():
+                loss, loss_breakdown = self.model(
+                    data,
+                    return_loss = True
+                )
 
-            self.accelerator.backward(loss / self.grad_accum_every)
+                self.accelerator.backward(loss / self.grad_accum_every)
 
         self.log(
             total_loss = loss.item(),
@@ -323,16 +329,21 @@ class VideoTokenizerTrainer(Module):
 
         apply_gradient_penalty = not (step % self.apply_gradient_penalty_every)
 
-        for _ in range(self.grad_accum_every):
+        for grad_accum_step in range(self.grad_accum_every):
+
+            is_last = grad_accum_step == (self.grad_accum_every - 1)
+            context = partial(self.accelerator.no_sync, self.model) if not is_last else nullcontext
+
             data, *_ = next(dl_iter)
 
-            discr_loss, discr_loss_breakdown = self.model(
-                data,
-                return_discr_loss = True,
-                apply_gradient_penalty = apply_gradient_penalty
-            )
+            with context():
+                discr_loss, discr_loss_breakdown = self.model(
+                    data,
+                    return_discr_loss = True,
+                    apply_gradient_penalty = apply_gradient_penalty
+                )
 
-            self.accelerator.backward(discr_loss / self.grad_accum_every)
+                self.accelerator.backward(discr_loss / self.grad_accum_every)
 
         self.log(discr_loss = discr_loss_breakdown.discr_loss.item())
 
