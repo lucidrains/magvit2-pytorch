@@ -1550,9 +1550,7 @@ class VideoTokenizer(Module):
         # to pixels
 
         if decode_first_frame_separately:
-
-            padding_idx = 0 if not video_contains_first_frame else self.time_padding
-            left_pad, xff, x = x[:, :, :padding_idx], x[:, :, padding_idx], x[:, :, (padding_idx + 1):]
+            left_pad, xff, x = x[:, :, :self.time_padding], x[:, :, self.time_padding], x[:, :, (self.time_padding + 1):]
 
             out = self.conv_out(x)
             outff = self.conv_out_first_frame(xff)
