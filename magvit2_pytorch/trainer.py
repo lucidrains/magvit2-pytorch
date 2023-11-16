@@ -86,8 +86,8 @@ class VideoTokenizerTrainer(Module):
         if use_wandb_tracking:
             accelerate_kwargs['log_with'] = 'wandb'
 
-        if 'kwarg_handlers' not in accelerate_kwargs:
-            accelerate_kwargs['kwarg_handlers'] = [DEFAULT_DDP_KWARGS]
+        if 'kwargs_handlers' not in accelerate_kwargs:
+            accelerate_kwargs['kwargs_handlers'] = [DEFAULT_DDP_KWARGS]
 
         # instantiate accelerator
 
