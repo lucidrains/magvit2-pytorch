@@ -1024,7 +1024,8 @@ class VideoTokenizer(Module):
         adversarial_loss_weight = 1.,
         grad_penalty_loss_weight = 10.,
         multiscale_adversarial_loss_weight = 1.,
-        flash_attn = True
+        flash_attn = True,
+        separate_first_frame_encoding = False
     ):
         super().__init__()
 
@@ -1040,9 +1041,23 @@ class VideoTokenizer(Module):
         self.channels = channels
         self.image_size = image_size
 
-        # encoder
+        # initial encoder
 
         self.conv_in = CausalConv3d(channels, init_dim, input_conv_kernel_size, pad_mode = pad_mode)
+
+        # whether to encode the first frame separately or not
+
+        self.conv_first_frame = nn.Identity()
+
+        if separate_first_frame_encoding:
+            spatial_kernel_size = input_conv_kernel_size[-2:]
+            spatial_same_padding = tuple(k // 2 for k in spatial_kernel_size)
+
+            self.conv_first_frame = nn.Conv2d(channels, init_dim, spatial_kernel_size, padding = spatial_same_padding, padding_mode = pad_mode)
+
+        self.separate_first_frame_encoding = separate_first_frame_encoding
+
+        # encoder and decoder layers
 
         self.encoder_layers = ModuleList([])
         self.decoder_layers = ModuleList([])
@@ -1364,6 +1379,7 @@ class VideoTokenizer(Module):
     def parameters(self):
         return [
             *self.conv_in.parameters(),
+            *self.conv_first_frame.parameters(),
             *self.conv_out.parameters(),
             *self.encoder_layers.parameters(),
             *self.decoder_layers.parameters(),
@@ -1426,8 +1442,11 @@ class VideoTokenizer(Module):
         self,
         video: Tensor,
         quantize = False,
-        cond: Optional[Tensor] = None
+        cond: Optional[Tensor] = None,
+        video_contains_first_frame = True
     ):
+        encode_first_frame_separately = self.separate_first_frame_encoding and video_contains_first_frame
+
         # conditioning, if needed
 
         assert (not self.has_cond) or exists(cond), '`cond` must be passed into tokenizer forward method since conditionable layers were specified'
@@ -1439,8 +1458,16 @@ class VideoTokenizer(Module):
             cond_kwargs = dict(cond = cond)
 
         # initial conv
+        # taking into account whether to encode first frame separately
+
+        if encode_first_frame_separately:
+            first_frame, video = video[:, :, 0], video[:, :, 1:]
+            xf = self.conv_first_frame(first_frame)
 
         x = self.conv_in(video)
+
+        if encode_first_frame_separately:
+            x, _ = pack([xf, x], 'b c * h w')
 
         # encoder layers
 
@@ -1550,7 +1577,7 @@ class VideoTokenizer(Module):
 
         batch, frames = video.shape[0], video.shape[2]
 
-        assert divisible_by(frames - int(video_contains_first_frame), self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - 1}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
+        assert divisible_by(frames - int(video_contains_first_frame), self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - int(video_contains_first_frame)}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
 
         # pad the time, accounting for total time downsample factor, so that images can be trained independently
 
@@ -1559,7 +1586,7 @@ class VideoTokenizer(Module):
 
         # encoder
 
-        x = self.encode(padded_video, cond = cond)
+        x = self.encode(padded_video, cond = cond, video_contains_first_frame = video_contains_first_frame)
 
         # lookup free quantization
 
