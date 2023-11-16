@@ -635,7 +635,7 @@ class Conv3DMod(Module):
         dim_out = None,
         demod = True,
         eps = 1e-8,
-        pad_mode = 'constant'
+        pad_mode = 'zeros'
     ):
         super().__init__()
         dim_out = default(dim_out, dim)
@@ -828,10 +828,10 @@ class TimeUpsample2x(Module):
 
 # autoencoder - only best variant here offered, with causal conv 3d
 
-def SameConv2d(dim_in, dim_out, kernel_size, padding_mode = 'constant'):
+def SameConv2d(dim_in, dim_out, kernel_size):
     kernel_size = cast_tuple(kernel_size, 2)
     padding = [k // 2 for k in kernel_size]
-    return nn.Conv2d(dim_in, dim_out, kernel_size = kernel_size, padding = padding, padding_mode = padding_mode)
+    return nn.Conv2d(dim_in, dim_out, kernel_size = kernel_size, padding = padding)
 
 class CausalConv3d(Module):
     @beartype
@@ -840,7 +840,7 @@ class CausalConv3d(Module):
         chan_in,
         chan_out,
         kernel_size: Union[int, Tuple[int, int, int]],
-        pad_mode = 'reflect',
+        pad_mode = 'constant',
         **kwargs
     ):
         super().__init__()
@@ -875,7 +875,7 @@ class CausalConv3d(Module):
 def ResidualUnit(
     dim,
     kernel_size: Union[int, Tuple[int, int, int]],
-    pad_mode: str = 'reflect'
+    pad_mode: str = 'constant'
 ):
     net = Sequential(
         CausalConv3d(dim, dim, kernel_size, pad_mode = pad_mode),
@@ -1009,7 +1009,7 @@ class VideoTokenizer(Module):
         dim_cond_expansion_factor = 4.,
         input_conv_kernel_size: Tuple[int, int, int] = (7, 7, 7),
         output_conv_kernel_size: Tuple[int, int, int] = (3, 3, 3),
-        pad_mode: str = 'reflect',
+        pad_mode: str = 'constant',
         lfq_entropy_loss_weight = 0.1,
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 2.5,
@@ -1056,8 +1056,8 @@ class VideoTokenizer(Module):
         self.conv_out_first_frame = nn.Identity()
 
         if separate_first_frame_encoding:
-            self.conv_in_first_frame = SameConv2d(channels, init_dim, input_conv_kernel_size[-2:], padding_mode = pad_mode)
-            self.conv_out_first_frame = SameConv2d(init_dim, channels, output_conv_kernel_size[-2:], padding_mode = pad_mode)
+            self.conv_in_first_frame = SameConv2d(channels, init_dim, input_conv_kernel_size[-2:])
+            self.conv_out_first_frame = SameConv2d(init_dim, channels, output_conv_kernel_size[-2:])
 
         self.separate_first_frame_encoding = separate_first_frame_encoding
 
