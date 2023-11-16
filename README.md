@@ -14,6 +14,8 @@ Please join <a href="https://discord.gg/xBPBXfcFHd"><img alt="Join us on Discord
 
 - <a href="https://github.com/LouisSerrano">Louis Serrano</a> for sharing some early initial runs, validating that the overall architecture converges with finite scalar quantization.
 
+- You? If you are a talented research engineer / scientist, feel free to contribute to cutting edge open source science!
+
 ## Install
 
 ```bash
