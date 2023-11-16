@@ -301,7 +301,7 @@ class VideoTokenizerTrainer(Module):
 
             data, *_ = next(dl_iter)
 
-            with context():
+            with self.accelerator.autocast(), context():
                 loss, loss_breakdown = self.model(
                     data,
                     return_loss = True
@@ -344,7 +344,7 @@ class VideoTokenizerTrainer(Module):
 
             data, *_ = next(dl_iter)
 
-            with context():
+            with self.accelerator.autocast(), context():
                 discr_loss, discr_loss_breakdown = self.model(
                     data,
                     return_discr_loss = True,
@@ -398,8 +398,9 @@ class VideoTokenizerTrainer(Module):
             valid_video, = next(dl_iter)
             valid_video = valid_video.to(self.device)
 
-            loss, _ = self.unwrapped_model(valid_video, return_recon_loss_only = True)
-            ema_loss, ema_recon_video = self.ema_model(valid_video, return_recon_loss_only = True)
+            with self.accelerator.autocast():
+                loss, _ = self.unwrapped_model(valid_video, return_recon_loss_only = True)
+                ema_loss, ema_recon_video = self.ema_model(valid_video, return_recon_loss_only = True)
 
             recon_loss += loss / self.grad_accum_every
             ema_recon_loss += ema_loss / self.grad_accum_every
