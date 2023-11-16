@@ -22,6 +22,7 @@ from magvit2_pytorch.data import (
 )
 
 from accelerate import Accelerator
+from accelerate.utils import DistributedDataParallelKwargs
 
 from einops import rearrange
 
@@ -33,6 +34,10 @@ VideosOrImagesLiteral = Union[
     Literal['videos'],
     Literal['images']
 ]
+
+DEFAULT_DDP_KWARGS = DistributedDataParallelKwargs(
+    find_unused_parameters = True
+)
 
 # helpers
 
@@ -80,6 +85,9 @@ class VideoTokenizerTrainer(Module):
 
         if use_wandb_tracking:
             accelerate_kwargs['log_with'] = 'wandb'
+
+        if 'kwarg_handlers' not in accelerate_kwargs:
+            accelerate_kwargs['kwarg_handlers'] = [DEFAULT_DDP_KWARGS]
 
         # instantiate accelerator
 
