@@ -25,6 +25,8 @@ from beartype.typing import Union, Tuple, Optional, List
 from magvit2_pytorch.attend import Attend
 from magvit2_pytorch.version import __version__
 
+from gateloop_transformer import SimpleGateLoopLayer
+
 from kornia.filters import filter3d
 
 import pickle
@@ -163,6 +165,23 @@ class Residual(Module):
 
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
+
+# for a bunch of tensor operations to change tensor to (batch, time, feature dimension) and back
+
+class ToTimeSequence(Module):
+    @beartype
+    def __init__(self, fn: Module):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x, **kwargs):
+        x = rearrange(x, 'b c f ... -> b ... f c')
+        x, ps = pack_one(x, '* n c')
+
+        o = self.fn(x, **kwargs)
+
+        o = unpack_one(o, ps, '* n c')
+        return rearrange(o, 'b ... f c -> b c f ...')
 
 # token shifting
 
@@ -1030,7 +1049,8 @@ class VideoTokenizer(Module):
         grad_penalty_loss_weight = 10.,
         multiscale_adversarial_loss_weight = 1.,
         flash_attn = True,
-        separate_first_frame_encoding = False
+        separate_first_frame_encoding = False,
+        gateloop_use_jax = False
     ):
         super().__init__()
 
@@ -1156,6 +1176,14 @@ class VideoTokenizer(Module):
                     Residual(LinearSpaceAttention(**attn_kwargs)),
                     Residual(FeedForward(dim))
                 )
+
+            elif layer_type == 'gateloop_time':
+                gateloop_kwargs = dict(
+                    use_jax_associative_scan = gateloop_use_jax
+                )
+
+                encoder_layer = ToTimeSequence(Residual(SimpleGateLoopLayer(dim = dim)))
+                decoder_layer = ToTimeSequence(Residual(SimpleGateLoopLayer(dim = dim)))
 
             elif layer_type == 'attend_time':
                 attn_kwargs = dict(
