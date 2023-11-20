@@ -294,6 +294,8 @@ class VideoTokenizerTrainer(Module):
 
         # main model
 
+        self.optimizer.zero_grad()
+
         for grad_accum_step in range(self.grad_accum_every):
 
             is_last = grad_accum_step == (self.grad_accum_every - 1)
@@ -322,7 +324,6 @@ class VideoTokenizerTrainer(Module):
             self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
         self.optimizer.step()
-        self.optimizer.zero_grad()
 
         # update ema model
 
@@ -334,6 +335,12 @@ class VideoTokenizerTrainer(Module):
         self.wait()
 
         # discriminator and multiscale discriminators
+
+        self.discr_optimizer.zero_grad()
+
+        if self.has_multiscale_discrs:
+            for multiscale_discr_optimizer in self.multiscale_discr_optimizers:
+                multiscale_discr_optimizer.zero_grad()
 
         apply_gradient_penalty = not (step % self.apply_gradient_penalty_every)
 
@@ -368,12 +375,10 @@ class VideoTokenizerTrainer(Module):
                     self.accelerator.clip_grad_norm_(multiscale_discr.parameters(), self.max_grad_norm)
 
         self.discr_optimizer.step()
-        self.discr_optimizer.zero_grad()
 
         if self.has_multiscale_discrs:
             for multiscale_discr_optimizer in self.multiscale_discr_optimizers:
                 multiscale_discr_optimizer.step()
-                multiscale_discr_optimizer.zero_grad()
 
         # update train step
 
