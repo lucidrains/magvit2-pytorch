@@ -1364,6 +1364,10 @@ class VideoTokenizer(Module):
 
         self.use_vgg = use_vgg
 
+        # main flag for whether to use GAN at all
+
+        self.use_gan = use_gan
+
         # discriminator
 
         discr_kwargs = default(discr_kwargs, dict(

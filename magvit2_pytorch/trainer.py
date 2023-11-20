@@ -336,7 +336,7 @@ class VideoTokenizerTrainer(Module):
 
         # if adversarial loss is turned off, continue
 
-        if not self.model.has_gan:
+        if not self.model.use_gan:
             self.step.add_(1)
             return
 
