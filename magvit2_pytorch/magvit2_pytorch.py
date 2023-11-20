@@ -1020,7 +1020,7 @@ class VideoTokenizer(Module):
         ),
         residual_conv_kernel_size = 3,
         num_codebooks = 1,
-        codebook_size = 8192,
+        codebook_size: Optional[int] = None,
         channels = 3,
         init_dim = 64,
         max_dim = float('inf'),
@@ -1035,7 +1035,7 @@ class VideoTokenizer(Module):
         quantizer_aux_loss_weight = 1.,
         lfq_activation = nn.Identity(),
         use_fsq = False,
-        fsq_levels: List[int] = [8, 5, 5, 5],
+        fsq_levels: Optional[List[int]] = None,
         attn_dim_head = 32,
         attn_heads = 8,
         attn_dropout = 0.,
@@ -1320,6 +1320,8 @@ class VideoTokenizer(Module):
         self.use_fsq = use_fsq
 
         if not use_fsq:
+            assert exists(codebook_size) and not exists(fsq_levels), 'if use_fsq is set to False, `codebook_size` must be set (and not `fsq_levels`)'
+
             # lookup free quantizer(s) - multiple codebooks is possible
             # each codebook will get its own entropy regularization
 
@@ -1333,6 +1335,8 @@ class VideoTokenizer(Module):
             )
 
         else:
+            assert not exists(codebook_size) and exists(fsq_levels), 'if use_fsq is set to True, `fsq_levels` must be set (and not `codebook_size`). the effective codebook size is the cumulative product of all the FSQ levels'
+
             self.quantizers = FSQ(
                 fsq_levels,
                 dim = dim,
