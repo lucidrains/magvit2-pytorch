@@ -334,6 +334,12 @@ class VideoTokenizerTrainer(Module):
 
         self.wait()
 
+        # if adversarial loss is turned off, continue
+
+        if not self.model.has_gan:
+            self.step.add_(1)
+            return
+
         # discriminator and multiscale discriminators
 
         self.discr_optimizer.zero_grad()

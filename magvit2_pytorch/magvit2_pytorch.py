@@ -1381,6 +1381,8 @@ class VideoTokenizer(Module):
 
         # multi-scale discriminators
 
+        self.has_multiscale_gan = use_gan and multiscale_adversarial_loss_weight > 0.
+
         self.multiscale_discrs = ModuleList([*multiscale_discrs])
 
         self.multiscale_adversarial_loss_weight = multiscale_adversarial_loss_weight
@@ -1751,6 +1753,8 @@ class VideoTokenizer(Module):
 
         # per-frame image discriminator
 
+        recon_video_frames = None
+
         if self.has_gan:
             frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
             recon_video_frames = pick_video_frame(recon_video, frame_indices)
@@ -1773,7 +1777,10 @@ class VideoTokenizer(Module):
         multiscale_gen_losses = []
         multiscale_gen_adaptive_weights = []
 
-        if self.has_multiscale_discrs:
+        if self.has_multiscale_gan and self.has_multiscale_discrs:
+            if not exists(recon_video_frames):
+                recon_video_frames = pick_video_frame(recon_video, frame_indices)
+
             for discr in self.multiscale_discrs:
                 fake_logits = recon_video_frames
                 multiscale_gen_loss = hinge_gen_loss(fake_logits)
