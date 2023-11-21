@@ -1351,7 +1351,7 @@ class VideoTokenizer(Module):
 
         # perceptual loss related
 
-        use_vgg = channels in {1, 3} and perceptual_loss_weight > 0.
+        use_vgg = channels in {1, 3, 4} and perceptual_loss_weight > 0.
 
         self.vgg = None
         self.perceptual_loss_weight = perceptual_loss_weight
@@ -1749,6 +1749,10 @@ class VideoTokenizer(Module):
             if channels == 1:
                 input_vgg_input = repeat(input_vgg_input, 'b 1 h w -> b c h w', c = 3)
                 recon_vgg_input = repeat(recon_vgg_input, 'b 1 h w -> b c h w', c = 3)
+
+            elif channels == 4:
+                input_vgg_input = input_vgg_input[:, :3]
+                recon_vgg_input = recon_vgg_input[:, :3]
 
             input_vgg_feats = self.vgg(input_vgg_input)
             recon_vgg_feats = self.vgg(recon_vgg_input)
