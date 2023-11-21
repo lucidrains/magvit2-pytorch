@@ -1041,7 +1041,7 @@ class VideoTokenizer(Module):
         attn_dropout = 0.,
         vgg: Optional[Module] = None,
         vgg_weights: VGG16_Weights = VGG16_Weights.DEFAULT,
-        perceptual_loss_weight = 1.,
+        perceptual_loss_weight = 1e-1,
         discr_kwargs: Optional[dict] = None,
         multiscale_discrs: Tuple[Module, ...] = tuple(),
         use_gan = True,
@@ -1622,8 +1622,11 @@ class VideoTokenizer(Module):
         return_discr_loss = False,
         return_recon_loss_only = False,
         apply_gradient_penalty = True,
-        video_contains_first_frame = True
+        video_contains_first_frame = True,
+        adversarial_loss_weight = None
     ):
+        adversarial_loss_weight = default(adversarial_loss_weight, self.adversarial_loss_weight)
+
         assert (return_loss + return_codes + return_discr_loss) <= 1
         assert video_or_images.ndim in {4, 5}
 
@@ -1821,7 +1824,7 @@ class VideoTokenizer(Module):
         total_loss = recon_loss \
             + aux_losses * self.quantizer_aux_loss_weight \
             + perceptual_loss * self.perceptual_loss_weight \
-            + gen_loss * adaptive_weight * self.adversarial_loss_weight
+            + gen_loss * adaptive_weight * adversarial_loss_weight
 
         if self.has_multiscale_discrs:
 

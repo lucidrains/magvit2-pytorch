@@ -74,6 +74,7 @@ class VideoTokenizerTrainer(Module):
         checkpoint_every_step = 100,
         num_frames = 17,
         use_wandb_tracking = False,
+        discr_start_after_step = 0.,
         accelerate_kwargs: dict = dict(),
         ema_kwargs: dict = dict(),
         optimizer_kwargs: dict = dict(),
@@ -171,6 +172,10 @@ class VideoTokenizerTrainer(Module):
             self.optimizer,
             self.discr_optimizer
         )
+
+        # only use adversarial training after a certain number of steps
+
+        self.discr_start_after_step = discr_start_after_step
 
         # multiscale discr losses
 
@@ -292,6 +297,12 @@ class VideoTokenizerTrainer(Module):
 
         step = self.step.item()
 
+        # determine whether to train adversarially
+
+        train_adversarially = self.model.use_gan and (step + 1) > self.discr_start_after_step
+
+        adversarial_loss_weight = 0. if not train_adversarially else None
+
         # main model
 
         self.optimizer.zero_grad()
@@ -306,7 +317,8 @@ class VideoTokenizerTrainer(Module):
             with self.accelerator.autocast(), context():
                 loss, loss_breakdown = self.model(
                     data,
-                    return_loss = True
+                    return_loss = True,
+                    adversarial_loss_weight = adversarial_loss_weight
                 )
 
                 self.accelerator.backward(loss / self.grad_accum_every)
@@ -336,7 +348,7 @@ class VideoTokenizerTrainer(Module):
 
         # if adversarial loss is turned off, continue
 
-        if not self.model.use_gan:
+        if not train_adversarially:
             self.step.add_(1)
             return
 
