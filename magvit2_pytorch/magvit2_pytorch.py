@@ -1377,6 +1377,7 @@ class VideoTokenizer(Module):
         discr_kwargs = default(discr_kwargs, dict(
             dim = dim,
             image_size = image_size,
+            channels = channels,
             max_dim = 512
         ))
 
