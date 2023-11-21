@@ -563,7 +563,7 @@ class Discriminator(Module):
         attn_heads = 8,
         attn_dim_head = 32,
         ff_mult = 4,
-        antialiased_downsample = True
+        antialiased_downsample = False
     ):
         super().__init__()
         image_size = pair(image_size)
@@ -1787,7 +1787,7 @@ class VideoTokenizer(Module):
             if exists(norm_grad_wrt_perceptual_loss):
                 norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
                 adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
-                adaptive_weight.clamp_(max = 1e4)
+                adaptive_weight.clamp_(max = 1e3)
         else:
             gen_loss = self.zero
             adaptive_weight = 0.
@@ -1807,14 +1807,14 @@ class VideoTokenizer(Module):
 
                 multiscale_gen_losses.append(multiscale_gen_loss)
 
-                adaptive_weight = 1.
+                multiscale_adaptive_weight = 1.
 
                 if exists(norm_grad_wrt_perceptual_loss):
                     norm_grad_wrt_gen_loss = grad_layer_wrt_loss(multiscale_gen_loss, last_dec_layer).norm(p = 2)
-                    adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
-                    adaptive_weight.clamp_(max = 1e4)
+                    multiscale_adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
+                    multiscale_adaptive_weight.clamp_(max = 1e3)
 
-                multiscale_gen_adaptive_weights.append(adaptive_weight)
+                multiscale_gen_adaptive_weights.append(multiscale_adaptive_weight)
 
         # calculate total loss
 
