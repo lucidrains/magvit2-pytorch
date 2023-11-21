@@ -1640,7 +1640,14 @@ class VideoTokenizer(Module):
 
         batch, channels, frames = video.shape[:3]
 
+        is_greyscale = channels == 1
+
         assert divisible_by(frames - int(video_contains_first_frame), self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - int(video_contains_first_frame)}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
+
+        # handle greyscale
+
+        if is_greyscale:
+            video = repeat(video, 'b 1 ... -> b c ...', c = 3)
 
         # encoder
 
@@ -1744,10 +1751,6 @@ class VideoTokenizer(Module):
 
             input_vgg_input = pick_video_frame(video, frame_indices)
             recon_vgg_input = pick_video_frame(recon_video, frame_indices)
-
-            if channels == 1:
-                input_vgg_input = repeat(input_vgg_input, 'b 1 h w -> b c h w', c = 3)
-                recon_vgg_input = repeat(recon_vgg_input, 'b 1 h w -> b c h w', c = 3)
 
             input_vgg_feats = self.vgg(input_vgg_input)
             recon_vgg_feats = self.vgg(recon_vgg_input)
