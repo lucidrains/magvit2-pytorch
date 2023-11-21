@@ -1351,7 +1351,7 @@ class VideoTokenizer(Module):
 
         # perceptual loss related
 
-        use_vgg = channels == 3 and perceptual_loss_weight > 0.
+        use_vgg = channels in {1, 3} and perceptual_loss_weight > 0.
 
         self.vgg = None
         self.perceptual_loss_weight = perceptual_loss_weight
@@ -1638,7 +1638,7 @@ class VideoTokenizer(Module):
         else:
             video = video_or_images
 
-        batch, frames = video.shape[0], video.shape[2]
+        batch, channels, frames = video.shape[:3]
 
         assert divisible_by(frames - int(video_contains_first_frame), self.time_downsample_factor), f'number of frames {frames} minus the first frame ({frames - int(video_contains_first_frame)}) must be divisible by the total downsample factor across time {self.time_downsample_factor}'
 
@@ -1739,10 +1739,15 @@ class VideoTokenizer(Module):
         # perceptual loss
 
         if self.use_vgg:
+
             frame_indices = torch.randn((batch, frames)).topk(1, dim = -1).indices
 
             input_vgg_input = pick_video_frame(video, frame_indices)
             recon_vgg_input = pick_video_frame(recon_video, frame_indices)
+
+            if channels == 1:
+                input_vgg_input = repeat(input_vgg_input, 'b 1 h w -> b c h w', c = 3)
+                recon_vgg_input = repeat(recon_vgg_input, 'b 1 h w -> b c h w', c = 3)
 
             input_vgg_feats = self.vgg(input_vgg_input)
             recon_vgg_feats = self.vgg(recon_vgg_input)
@@ -1756,7 +1761,9 @@ class VideoTokenizer(Module):
 
         last_dec_layer = self.conv_out.conv.weight
 
-        if self.training and (self.has_gan or self.has_multiscale_discrs):
+        norm_grad_wrt_perceptual_loss = None
+
+        if self.training and self.use_vgg and (self.has_gan or self.has_multiscale_discrs):
             norm_grad_wrt_perceptual_loss = grad_layer_wrt_loss(perceptual_loss, last_dec_layer).norm(p = 2)
 
         # per-frame image discriminator
@@ -1772,7 +1779,7 @@ class VideoTokenizer(Module):
 
             adaptive_weight = 1.
 
-            if not self.training:
+            if exists(norm_grad_wrt_perceptual_loss):
                 norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
                 adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
                 adaptive_weight.clamp_(max = 1e4)
@@ -1797,12 +1804,12 @@ class VideoTokenizer(Module):
 
                 adaptive_weight = 1.
 
-                if not self.training:
+                if exists(norm_grad_wrt_perceptual_loss):
                     norm_grad_wrt_gen_loss = grad_layer_wrt_loss(multiscale_gen_loss, last_dec_layer).norm(p = 2)
                     adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
                     adaptive_weight.clamp_(max = 1e4)
 
-                    multiscale_gen_adaptive_weights.append(adaptive_weight)
+                multiscale_gen_adaptive_weights.append(adaptive_weight)
 
         # calculate total loss
 
