@@ -302,6 +302,7 @@ class VideoTokenizerTrainer(Module):
         train_adversarially = self.model.use_gan and (step + 1) > self.discr_start_after_step
 
         adversarial_loss_weight = 0. if not train_adversarially else None
+        multiscale_adversarial_loss_weight = 0. if not train_adversarially else None
 
         # main model
 
@@ -318,7 +319,8 @@ class VideoTokenizerTrainer(Module):
                 loss, loss_breakdown = self.model(
                     data,
                     return_loss = True,
-                    adversarial_loss_weight = adversarial_loss_weight
+                    adversarial_loss_weight = adversarial_loss_weight,
+                    multiscale_adversarial_loss_weight = multiscale_adversarial_loss_weight
                 )
 
                 self.accelerator.backward(loss / self.grad_accum_every)

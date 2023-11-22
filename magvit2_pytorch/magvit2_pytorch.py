@@ -1623,9 +1623,11 @@ class VideoTokenizer(Module):
         return_recon_loss_only = False,
         apply_gradient_penalty = True,
         video_contains_first_frame = True,
-        adversarial_loss_weight = None
+        adversarial_loss_weight = None,
+        multiscale_adversarial_loss_weight = None
     ):
         adversarial_loss_weight = default(adversarial_loss_weight, self.adversarial_loss_weight)
+        multiscale_adversarial_loss_weight = default(multiscale_adversarial_loss_weight, self.multiscale_adversarial_loss_weight)
 
         assert (return_loss + return_codes + return_discr_loss) <= 1
         assert video_or_images.ndim in {4, 5}
@@ -1830,7 +1832,7 @@ class VideoTokenizer(Module):
 
             weighted_multiscale_gen_losses = sum(loss * weight for loss, weight in zip(multiscale_gen_losses, multiscale_gen_adaptive_weights))
 
-            total_loss = total_loss + weighted_multiscale_gen_losses * self.multiscale_adversarial_loss_weight
+            total_loss = total_loss + weighted_multiscale_gen_losses * multiscale_adversarial_loss_weight
 
         # loss breakdown
 
