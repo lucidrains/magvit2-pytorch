@@ -183,6 +183,8 @@ def video_to_tensor(
 
     frames_torch = torch.tensor(frames).float()
 
+    frames_torch /= 255.
+
     return frames_torch[:, :num_frames, :, :]
 
 @beartype
