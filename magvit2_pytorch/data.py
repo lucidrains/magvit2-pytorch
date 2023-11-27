@@ -184,6 +184,7 @@ def video_to_tensor(
     frames_torch = torch.tensor(frames).float()
 
     frames_torch /= 255.
+    frames_torch = frames_torch.flip(dims = (0,)) # BGR -> RGB format
 
     return frames_torch[:, :num_frames, :, :]
 
