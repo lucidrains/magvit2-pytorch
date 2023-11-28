@@ -5,6 +5,7 @@ from functools import wraps, partial
 
 import torch
 import torch.nn.functional as F
+from torch.cuda.amp import autocast
 from torch import nn, einsum, Tensor
 from torch.nn import Module, ModuleList
 from torch.autograd import grad as torch_grad
@@ -117,6 +118,7 @@ def hinge_discr_loss(fake, real):
 def hinge_gen_loss(fake):
     return -fake.mean()
 
+@autocast(enabled = False)
 @beartype
 def grad_layer_wrt_loss(
     loss: Tensor,
@@ -1838,8 +1840,11 @@ class VideoTokenizer(Module):
 
             if exists(norm_grad_wrt_perceptual_loss):
                 norm_grad_wrt_gen_loss = grad_layer_wrt_loss(gen_loss, last_dec_layer).norm(p = 2)
-                adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-5)
+                adaptive_weight = norm_grad_wrt_perceptual_loss / norm_grad_wrt_gen_loss.clamp(min = 1e-3)
                 adaptive_weight.clamp_(max = 1e3)
+
+                if torch.isnan(adaptive_weight).any():
+                    adaptive_weight = 1.
         else:
             gen_loss = self.zero
             adaptive_weight = 0.
