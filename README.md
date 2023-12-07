@@ -34,6 +34,7 @@ tokenizer = VideoTokenizer(
     image_size = 128,
     init_dim = 64,
     max_dim = 512,
+    codebook_size = 1024,
     layers = (
         'residual',
         'compress_space',
