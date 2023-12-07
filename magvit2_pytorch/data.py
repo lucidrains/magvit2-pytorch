@@ -78,7 +78,7 @@ class ImageDataset(Dataset):
         image_size,
         channels = 3,
         convert_image_to = None,
-        exts = ['jpg', 'jpeg', 'png']
+        exts = ['jpg', 'jpeg', 'png', 'JPEG']
     ):
         super().__init__()
         folder = Path(folder)
