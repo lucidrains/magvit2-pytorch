@@ -86,6 +86,8 @@ class ImageDataset(Dataset):
         self.folder = folder
 
         self.image_size = image_size
+
+        exts = exts + [ext.upper() for ext in exts]
         self.paths = [p for ext in exts for p in folder.glob(f'**/*.{ext}')]
 
         print(f'{len(self.paths)} training samples found at {folder}')
