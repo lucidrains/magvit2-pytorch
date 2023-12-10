@@ -6,9 +6,11 @@ import torch
 from torch import nn
 from torch.nn import Module
 from torch.utils.data import Dataset, random_split
+from torch.optim.lr_scheduler import LambdaLR, LRScheduler
+import pytorch_warmup as warmup
 
 from beartype import beartype
-from beartype.typing import Optional, Literal, Union
+from beartype.typing import Optional, Literal, Union, Type
 
 from magvit2_pytorch.optimizer import get_optimizer
 
@@ -34,6 +36,8 @@ VideosOrImagesLiteral = Union[
     Literal['videos'],
     Literal['images']
 ]
+
+ConstantLRScheduler = partial(LambdaLR, lr_lambda = lambda step: 1.)
 
 DEFAULT_DDP_KWARGS = DistributedDataParallelKwargs(
     find_unused_parameters = True
@@ -75,6 +79,9 @@ class VideoTokenizerTrainer(Module):
         num_frames = 17,
         use_wandb_tracking = False,
         discr_start_after_step = 0.,
+        warmup_steps = 1000,
+        scheduler: Optional[Type[LRScheduler]] = None,
+        scheduler_kwargs: dict = dict(),
         accelerate_kwargs: dict = dict(),
         ema_kwargs: dict = dict(),
         optimizer_kwargs: dict = dict(),
@@ -148,6 +155,20 @@ class VideoTokenizerTrainer(Module):
 
         self.optimizer = get_optimizer(model.parameters(), lr = learning_rate, **optimizer_kwargs)
         self.discr_optimizer = get_optimizer(model.discr_parameters(), lr = learning_rate, **optimizer_kwargs)
+
+        # warmup
+
+        self.warmup = warmup.LinearWarmup(self.optimizer, warmup_period = warmup_steps)
+        self.discr_warmup = warmup.LinearWarmup(self.discr_optimizer, warmup_period = warmup_steps)
+
+        # schedulers
+
+        if exists(scheduler):
+            self.scheduler = scheduler(self.optimizer, **scheduler_kwargs)
+            self.discr_scheduler = scheduler(self.discr_optimizer, **scheduler_kwargs)
+        else:
+            self.scheduler = ConstantLRScheduler(self.optimizer)
+            self.discr_scheduler = ConstantLRScheduler(self.discr_optimizer)
 
         # training related params
 
@@ -270,7 +291,12 @@ class VideoTokenizerTrainer(Module):
             model = self.unwrapped_model.state_dict(),
             ema_model = self.ema_model.state_dict(),
             optimizer = self.optimizer.state_dict(),
-            discr_optimizer = self.discr_optimizer.state_dict()
+            discr_optimizer = self.discr_optimizer.state_dict(),
+            warmup = self.warmup.state_dict(),
+            scheduler = self.scheduler.state_dict(),
+            discr_warmup = self.discr_warmup.state_dict(),
+            discr_scheduler = self.discr_scheduler.state_dict(),
+            step = self.step.item()
         )
 
         for ind, opt in enumerate(self.multiscale_discr_optimizers):
@@ -288,9 +314,15 @@ class VideoTokenizerTrainer(Module):
         self.ema_model.load_state_dict(pkg['ema_model'])
         self.optimizer.load_state_dict(pkg['optimizer'])
         self.discr_optimizer.load_state_dict(pkg['discr_optimizer'])
+        self.warmup.load_state_dict(pkg['warmup'])
+        self.scheduler.load_state_dict(pkg['scheduler'])
+        self.discr_warmup.load_state_dict(pkg['discr_warmup'])
+        self.discr_scheduler.load_state_dict(pkg['discr_scheduler'])
 
         for ind, opt in enumerate(self.multiscale_discr_optimizers):
             opt.load_state_dict(pkg[f'multiscale_discr_optimizer_{ind}'])
+
+        self.step.copy_(pkg['step'])
 
     def train_step(self, dl_iter):
         self.model.train()
@@ -338,6 +370,10 @@ class VideoTokenizerTrainer(Module):
             self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
         self.optimizer.step()
+
+        if not self.accelerator.optimizer_step_was_skipped:
+            with self.warmup.dampening():
+                self.scheduler.step()
 
         # update ema model
 
@@ -395,6 +431,10 @@ class VideoTokenizerTrainer(Module):
                     self.accelerator.clip_grad_norm_(multiscale_discr.parameters(), self.max_grad_norm)
 
         self.discr_optimizer.step()
+
+        if not self.accelerator.optimizer_step_was_skipped:
+            with self.discr_warmup.dampening():
+                self.discr_optimizer.step()
 
         if self.has_multiscale_discrs:
             for multiscale_discr_optimizer in self.multiscale_discr_optimizers:
