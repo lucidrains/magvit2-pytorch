@@ -25,7 +25,7 @@ setup(
     'einops>=0.7.0',
     'ema-pytorch>=0.2.4',
     'pytorch-warmup',
-    'gateloop-transformer>=0.0.25',
+    'gateloop-transformer>=0.2.2',
     'kornia',
     'opencv-python',
     'pillow',

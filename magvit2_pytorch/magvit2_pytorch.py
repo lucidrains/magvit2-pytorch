@@ -1098,8 +1098,7 @@ class VideoTokenizer(Module):
         grad_penalty_loss_weight = 10.,
         multiscale_adversarial_loss_weight = 1.,
         flash_attn = True,
-        separate_first_frame_encoding = False,
-        gateloop_use_jax = False
+        separate_first_frame_encoding = False
     ):
         super().__init__()
 
@@ -1228,7 +1227,7 @@ class VideoTokenizer(Module):
 
             elif layer_type == 'gateloop_time':
                 gateloop_kwargs = dict(
-                    use_jax_associative_scan = gateloop_use_jax
+                    use_heinsen = False
                 )
 
                 encoder_layer = ToTimeSequence(Residual(SimpleGateLoopLayer(dim = dim)))
