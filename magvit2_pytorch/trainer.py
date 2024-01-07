@@ -30,6 +30,8 @@ from einops import rearrange
 
 from ema_pytorch import EMA
 
+from pytorch_custom_utils import auto_unwrap_model
+
 # constants
 
 VideosOrImagesLiteral = Union[
@@ -52,26 +54,9 @@ def cycle(dl):
     while True:
         for data in dl:
             yield data
-
-# a forwarding wrapper, to take care of the unwrapped model issue
-
-class ForwardingWrapper:
-  def __init__(self, parent, child):
-    self.parent = parent
-    self.child = child
-
-  def __getattr__(self, key):
-    if hasattr(self.parent, key):
-      return getattr(self.parent, key)
-
-    return getattr(self.child, key)
-
-  def __call__(self, *args, **kwargs):
-    call_fn = self.__getattr__('__call__')
-    return call_fn(*args, **kwargs)
-
 # class
 
+@auto_unwrap_model()
 class VideoTokenizerTrainer:
     @beartype
     def __init__(
@@ -208,10 +193,6 @@ class VideoTokenizerTrainer:
             self.optimizer,
             self.discr_optimizer
         )
-
-        # wrap model with forwarding wrapper
-
-        self.model = ForwardingWrapper(self.model, self.accelerator.unwrap_model(self.model))
 
         # only use adversarial training after a certain number of steps
 

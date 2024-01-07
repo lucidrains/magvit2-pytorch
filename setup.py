@@ -29,6 +29,7 @@ setup(
     'kornia',
     'opencv-python',
     'pillow',
+    'pytorch-custom-utils>=0.0.9',
     'numpy',
     'vector-quantize-pytorch>=1.11.8',
     'torch',
