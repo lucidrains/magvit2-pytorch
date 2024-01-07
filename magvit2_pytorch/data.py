@@ -82,7 +82,7 @@ class ImageDataset(Dataset):
     ):
         super().__init__()
         folder = Path(folder)
-        assert folder.is_dir(), f'{str(folder)} must be a folder containing videos'
+        assert folder.is_dir(), f'{str(folder)} must be a folder containing images'
         self.folder = folder
 
         self.image_size = image_size
