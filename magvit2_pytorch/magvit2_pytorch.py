@@ -806,7 +806,8 @@ class TimeDownsample2x(Module):
         super().__init__()
         dim_out = default(dim_out, dim)
         self.maybe_blur = Blur() if antialias else identity
-        self.conv = nn.Conv1d(dim, dim_out, kernel_size, stride = 2, padding = kernel_size // 2)
+        self.time_causal_padding = (kernel_size - 1, 0)
+        self.conv = nn.Conv1d(dim, dim_out, kernel_size, stride = 2)
 
     def forward(self, x):
         x = self.maybe_blur(x, time_only = True)
@@ -814,6 +815,7 @@ class TimeDownsample2x(Module):
         x = rearrange(x, 'b c t h w -> b h w c t')
         x, ps = pack_one(x, '* c t')
 
+        x = F.pad(x, self.time_casual_padding)
         out = self.conv(x)
 
         out = unpack_one(out, ps, '* c t')
