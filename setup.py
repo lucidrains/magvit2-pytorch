@@ -32,6 +32,7 @@ setup(
     'pytorch-custom-utils>=0.0.9',
     'numpy',
     'vector-quantize-pytorch>=1.11.8',
+    'taylor-series-linear-attention>=0.1.5',
     'torch',
     'torchvision',
     'x-transformers'

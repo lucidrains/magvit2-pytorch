@@ -155,11 +155,10 @@ with trainer.trackers(project_name = 'magvit2', run_name = 'baseline'):
 ```
 
 ```bibtex
-@inproceedings{ElNouby2021XCiTCI,
-    title   = {XCiT: Cross-Covariance Image Transformers},
-    author  = {Alaaeldin El-Nouby and Hugo Touvron and Mathilde Caron and Piotr Bojanowski and Matthijs Douze and Armand Joulin and Ivan Laptev and Natalia Neverova and Gabriel Synnaeve and Jakob Verbeek and Herv{\'e} J{\'e}gou},
-    booktitle = {Neural Information Processing Systems},
-    year    = {2021},
-    url     = {https://api.semanticscholar.org/CorpusID:235458262}
+@inproceedings{Arora2023ZoologyMA,
+    title   = {Zoology: Measuring and Improving Recall in Efficient Language Models},
+    author  = {Simran Arora and Sabri Eyuboglu and Aman Timalsina and Isys Johnson and Michael Poli and James Zou and Atri Rudra and Christopher R'e},
+    year    = {2023},
+    url     = {https://api.semanticscholar.org/CorpusID:266149332}
 }
 ```

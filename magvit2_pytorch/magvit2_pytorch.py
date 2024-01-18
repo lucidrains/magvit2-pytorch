@@ -28,6 +28,8 @@ from magvit2_pytorch.version import __version__
 
 from gateloop_transformer import SimpleGateLoopLayer
 
+from taylor_series_linear_attention import TaylorSeriesLinearAttn
+
 from kornia.filters import filter3d
 
 import pickle
@@ -393,10 +395,8 @@ class LinearAttention(Module):
         *,
         dim,
         dim_cond: Optional[int] = None,
-        dim_head = 32,
+        dim_head = 8,
         heads = 8,
-        scale = 8,
-        flash = False,
         dropout = 0.
     ):
         super().__init__()
@@ -409,23 +409,10 @@ class LinearAttention(Module):
         else:
             self.norm = RMSNorm(dim)
 
-        self.to_qkv = Sequential(
-            nn.Linear(dim, dim_inner * 3, bias = False),
-            Rearrange('b n (qkv h d) -> qkv b h d n', qkv = 3, h = heads)
-        )
-
-        self.temperature = nn.Parameter(torch.ones(heads, 1, 1))
-
-        self.attend = Attend(
-            scale = scale,
-            causal = False,
-            dropout = dropout,
-            flash = flash
-        )
-
-        self.to_out = Sequential(
-            Rearrange('b h d n -> b n (h d)'),
-            nn.Linear(dim_inner, dim)
+        self.attn = TaylorSeriesLinearAttn(
+            dim = dim,
+            dim_head = dim_head,
+            heads = heads
         )
 
     def forward(
@@ -437,14 +424,7 @@ class LinearAttention(Module):
 
         x = self.norm(x, **maybe_cond_kwargs)
 
-        q, k, v = self.to_qkv(x)
-
-        q, k = map(l2norm, (q, k))
-        q = q * self.temperature.exp()
-
-        out = self.attend(q, k, v)
-
-        return self.to_out(out)
+        return self.attn(x)
 
 class LinearSpaceAttention(LinearAttention):
     def forward(self, x, *args, **kwargs):
@@ -613,6 +593,8 @@ class Discriminator(Module):
         max_dim = 512,
         attn_heads = 8,
         attn_dim_head = 32,
+        linear_attn_dim_head = 8,
+        linear_attn_heads = 16,
         ff_mult = 4,
         antialiased_downsample = False
     ):
@@ -647,9 +629,8 @@ class Discriminator(Module):
             attn_block = Sequential(
                 Residual(LinearSpaceAttention(
                     dim = out_chan,
-                    heads = attn_heads,
-                    dim_head = attn_dim_head,
-                    flash = False
+                    heads = linear_attn_heads,
+                    dim_head = linear_attn_dim_head
                 )),
                 Residual(FeedForward(
                     dim = out_chan,
@@ -1090,6 +1071,8 @@ class VideoTokenizer(Module):
         attn_dim_head = 32,
         attn_heads = 8,
         attn_dropout = 0.,
+        linear_attn_dim_head = 8,
+        linear_attn_heads = 16,
         vgg: Optional[Module] = None,
         vgg_weights: VGG16_Weights = VGG16_Weights.DEFAULT,
         perceptual_loss_weight = 1e-1,
@@ -1209,21 +1192,19 @@ class VideoTokenizer(Module):
                 )
 
             elif layer_type == 'linear_attend_space':
-                attn_kwargs = dict(
+                linear_attn_kwargs = dict(
                     dim = dim,
-                    dim_head = attn_dim_head,
-                    heads = attn_heads,
-                    dropout = attn_dropout,
-                    flash = flash_attn
+                    dim_head = linear_attn_dim_head,
+                    heads = linear_attn_heads
                 )
 
                 encoder_layer = Sequential(
-                    Residual(LinearSpaceAttention(**attn_kwargs)),
+                    Residual(LinearSpaceAttention(**linear_attn_kwargs)),
                     Residual(FeedForward(dim))
                 )
 
                 decoder_layer = Sequential(
-                    Residual(LinearSpaceAttention(**attn_kwargs)),
+                    Residual(LinearSpaceAttention(**linear_attn_kwargs)),
                     Residual(FeedForward(dim))
                 )
 
