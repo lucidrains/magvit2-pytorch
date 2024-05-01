@@ -180,6 +180,8 @@ class VideoTokenizerTrainer:
 
         self.apply_gradient_penalty_every = apply_gradient_penalty_every
 
+        self.has_multiscale_discrs = self.model.has_multiscale_discrs
+
         # prepare for maybe distributed
 
         (
@@ -200,7 +202,6 @@ class VideoTokenizerTrainer:
 
         # multiscale discr losses
 
-        self.has_multiscale_discrs = self.model.has_multiscale_discrs
         self.multiscale_discr_optimizers = []
 
         for ind, discr in enumerate(self.model.multiscale_discrs):
