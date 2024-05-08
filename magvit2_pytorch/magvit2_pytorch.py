@@ -1065,6 +1065,7 @@ class VideoTokenizer(Module):
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 2.5,
         quantizer_aux_loss_weight = 1.,
+        lfq_soft_clamp_input_value = 10.,
         lfq_activation = nn.Identity(),
         use_fsq = False,
         fsq_levels: Optional[List[int]] = None,
@@ -1362,7 +1363,8 @@ class VideoTokenizer(Module):
                 num_codebooks = num_codebooks,
                 entropy_loss_weight = lfq_entropy_loss_weight,
                 commitment_loss_weight = lfq_commitment_loss_weight,
-                diversity_gamma = lfq_diversity_gamma
+                diversity_gamma = lfq_diversity_gamma,
+                soft_clamp_input_value = lfq_soft_clamp_input_value
             )
 
         else:
