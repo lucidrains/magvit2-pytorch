@@ -188,12 +188,16 @@ class VideoTokenizerTrainer:
             self.model,
             self.dataloader,
             self.optimizer,
-            self.discr_optimizer
+            self.discr_optimizer,
+            self.scheduler,
+            self.discr_scheduler,
         ) = self.accelerator.prepare(
             self.model,
             self.dataloader,
             self.optimizer,
-            self.discr_optimizer
+            self.discr_optimizer,
+            self.scheduler,
+            self.discr_scheduler,
         )
 
         # only use adversarial training after a certain number of steps
