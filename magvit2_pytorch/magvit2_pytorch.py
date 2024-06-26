@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 from pathlib import Path
 from math import log2, ceil, sqrt
@@ -21,7 +23,7 @@ from einops import rearrange, repeat, reduce, pack, unpack
 from einops.layers.torch import Rearrange
 
 from beartype import beartype
-from beartype.typing import Union, Tuple, Optional, List
+from beartype.typing import Tuple, List
 
 from magvit2_pytorch.attend import Attend
 from magvit2_pytorch.version import __version__
@@ -327,7 +329,7 @@ class Attention(Module):
         self,
         *,
         dim,
-        dim_cond: Optional[int] = None,
+        dim_cond: int | None = None,
         causal = False,
         dim_head = 32,
         heads = 8,
@@ -368,8 +370,8 @@ class Attention(Module):
     def forward(
         self,
         x,
-        mask: Optional[Tensor ] = None,
-        cond: Optional[Tensor] = None
+        mask: Tensor | None = None,
+        cond: Tensor | None = None
     ):
         maybe_cond_kwargs = dict(cond = cond) if self.need_cond else dict()
 
@@ -394,7 +396,7 @@ class LinearAttention(Module):
         self,
         *,
         dim,
-        dim_cond: Optional[int] = None,
+        dim_cond: int | None = None,
         dim_head = 8,
         heads = 8,
         dropout = 0.
@@ -418,7 +420,7 @@ class LinearAttention(Module):
     def forward(
         self,
         x,
-        cond: Optional[Tensor] = None
+        cond: Tensor | None = None
     ):
         maybe_cond_kwargs = dict(cond = cond) if self.need_cond else dict()
 
@@ -471,7 +473,7 @@ class FeedForward(Module):
         self,
         dim,
         *,
-        dim_cond: Optional[int] = None,
+        dim_cond: int | None = None,
         mult = 4,
         images = False
     ):
@@ -497,7 +499,7 @@ class FeedForward(Module):
         self,
         x: Tensor,
         *,
-        cond: Optional[Tensor] = None
+        cond: Tensor | None = None
     ):
         maybe_cond_kwargs = dict(cond = cond) if exists(cond) else dict()
 
@@ -892,7 +894,7 @@ class CausalConv3d(Module):
         self,
         chan_in,
         chan_out,
-        kernel_size: Union[int, Tuple[int, int, int]],
+        kernel_size: int | Tuple[int, int, int],
         pad_mode = 'constant',
         **kwargs
     ):
@@ -927,7 +929,7 @@ class CausalConv3d(Module):
 @beartype
 def ResidualUnit(
     dim,
-    kernel_size: Union[int, Tuple[int, int, int]],
+    kernel_size: int | Tuple[int, int, int],
     pad_mode: str = 'constant'
 ):
     net = Sequential(
@@ -945,7 +947,7 @@ class ResidualUnitMod(Module):
     def __init__(
         self,
         dim,
-        kernel_size: Union[int, Tuple[int, int, int]],
+        kernel_size: int | Tuple[int, int, int],
         *,
         dim_cond,
         pad_mode: str = 'constant',
@@ -989,7 +991,7 @@ class CausalConvTranspose3d(Module):
         self,
         chan_in,
         chan_out,
-        kernel_size: Union[int, Tuple[int, int, int]],
+        kernel_size: int | Tuple[int, int, int],
         *,
         time_stride,
         **kwargs
@@ -1045,14 +1047,14 @@ class VideoTokenizer(Module):
         self,
         *,
         image_size,
-        layers: Tuple[Union[str, Tuple[str, int]], ...] = (
+        layers: Tuple[str | Tuple[str, int], ...] = (
             'residual',
             'residual',
             'residual'
         ),
         residual_conv_kernel_size = 3,
         num_codebooks = 1,
-        codebook_size: Optional[int] = None,
+        codebook_size: int | None = None,
         channels = 3,
         init_dim = 64,
         max_dim = float('inf'),
@@ -1064,20 +1066,21 @@ class VideoTokenizer(Module):
         lfq_entropy_loss_weight = 0.1,
         lfq_commitment_loss_weight = 1.,
         lfq_diversity_gamma = 2.5,
+        lfq_spherical = False,
         quantizer_aux_loss_weight = 1.,
         lfq_soft_clamp_input_value = 10.,
         lfq_activation = nn.Identity(),
         use_fsq = False,
-        fsq_levels: Optional[List[int]] = None,
+        fsq_levels: List[int] | None = None,
         attn_dim_head = 32,
         attn_heads = 8,
         attn_dropout = 0.,
         linear_attn_dim_head = 8,
         linear_attn_heads = 16,
-        vgg: Optional[Module] = None,
+        vgg: Module | None = None,
         vgg_weights: VGG16_Weights = VGG16_Weights.DEFAULT,
         perceptual_loss_weight = 1e-1,
-        discr_kwargs: Optional[dict] = None,
+        discr_kwargs: dict | None = None,
         multiscale_discrs: Tuple[Module, ...] = tuple(),
         use_gan = True,
         adversarial_loss_weight = 1.,
@@ -1364,7 +1367,8 @@ class VideoTokenizer(Module):
                 entropy_loss_weight = lfq_entropy_loss_weight,
                 commitment_loss_weight = lfq_commitment_loss_weight,
                 diversity_gamma = lfq_diversity_gamma,
-                soft_clamp_input_value = lfq_soft_clamp_input_value
+                soft_clamp_input_value = lfq_soft_clamp_input_value,
+                spherical = lfq_spherical
             )
 
         else:
@@ -1519,7 +1523,7 @@ class VideoTokenizer(Module):
         self,
         video: Tensor,
         quantize = False,
-        cond: Optional[Tensor] = None,
+        cond: Tensor | None = None,
         video_contains_first_frame = True
     ):
         encode_first_frame_separately = self.separate_first_frame_encoding and video_contains_first_frame
@@ -1574,7 +1578,7 @@ class VideoTokenizer(Module):
     def decode_from_code_indices(
         self,
         codes: Tensor,
-        cond: Optional[Tensor] = None,
+        cond: Tensor | None = None,
         video_contains_first_frame = True
     ):
         assert codes.dtype in (torch.long, torch.int32)
@@ -1593,7 +1597,7 @@ class VideoTokenizer(Module):
     def decode(
         self,
         quantized: Tensor,
-        cond: Optional[Tensor] = None,
+        cond: Tensor | None = None,
         video_contains_first_frame = True
     ):
         decode_first_frame_separately = self.separate_first_frame_encoding and video_contains_first_frame
@@ -1652,7 +1656,7 @@ class VideoTokenizer(Module):
     def forward(
         self,
         video_or_images: Tensor,
-        cond: Optional[Tensor] = None,
+        cond: Tensor | None = None,
         return_loss = False,
         return_codes = False,
         return_recon = False,
