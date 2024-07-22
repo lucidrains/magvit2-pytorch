@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import copy
@@ -1132,10 +1133,10 @@ class VideoTokenizer(Module):
         time_downsample_factor = 1
         has_cond_across_layers = []
 
+        has_cond = False
+
         for layer_def in layers:
             layer_type, *layer_params = cast_tuple(layer_def)
-
-            has_cond = False
 
             if layer_type == 'residual':
                 encoder_layer = ResidualUnit(dim, residual_conv_kernel_size)
