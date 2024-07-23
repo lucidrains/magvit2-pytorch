@@ -1233,12 +1233,12 @@ class VideoTokenizer(Module):
 
                 encoder_layer = Sequential(
                     Residual(TokenShift(TimeAttention(**attn_kwargs))),
-                    Residual(TokenShift(FeedForward(dim, dim_cond = dim_cond)))
+                    Residual(TokenShift(FeedForward(dim)))
                 )
 
                 decoder_layer = Sequential(
                     Residual(TokenShift(TimeAttention(**attn_kwargs))),
-                    Residual(TokenShift(FeedForward(dim, dim_cond = dim_cond)))
+                    Residual(TokenShift(FeedForward(dim)))
                 )
 
             elif layer_type == 'cond_attend_space':
@@ -1255,12 +1255,12 @@ class VideoTokenizer(Module):
 
                 encoder_layer = Sequential(
                     Residual(SpaceAttention(**attn_kwargs)),
-                    Residual(FeedForward(dim))
+                    Residual(FeedForward(dim, dim_cond = dim_cond))
                 )
 
                 decoder_layer = Sequential(
                     Residual(SpaceAttention(**attn_kwargs)),
-                    Residual(FeedForward(dim))
+                    Residual(FeedForward(dim, dim_cond = dim_cond))
                 )
 
             elif layer_type == 'cond_linear_attend_space':
