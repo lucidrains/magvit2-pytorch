@@ -8,6 +8,8 @@ The Lookup Free Quantizer proposed in the paper can be found in a <a href="https
 
 Please join <a href="https://discord.gg/xBPBXfcFHd"><img alt="Join us on Discord" src="https://img.shields.io/discord/823813159592001537?color=5865F2&logo=discord&logoColor=white"></a> if you are interested in replicating the tokenizer proposed in this paper out in the open
 
+Update: Tencent has used the code in this repository and <a href="https://github.com/TencentARC/Open-MAGVIT2">open sourced a working model</a>
+
 ## Appreciation
 
 - <a href="https://stability.ai/">StabilityAI</a> and <a href="https://huggingface.co/">🤗 Huggingface</a> for the generous sponsorship, as well as my other sponsors, for affording me the independence to open source artificial intelligence.
