@@ -1738,13 +1738,14 @@ class VideoTokenizer(Module):
 
             real = pick_video_frame(video, frame_indices)
 
+            fake = pick_video_frame(recon_video, frame_indices).detach()
+
             if apply_gradient_penalty:
                 real = real.requires_grad_()
-
-            fake = pick_video_frame(recon_video, frame_indices)
+                fake = fake.requires_grad_()
 
             real_logits = self.discr(real)
-            fake_logits = self.discr(fake.detach())
+            fake_logits = self.discr(fake)
 
             discr_loss = hinge_discr_loss(fake_logits, real_logits)
 
@@ -1766,7 +1767,7 @@ class VideoTokenizer(Module):
             # gradient penalty
 
             if apply_gradient_penalty:
-                gradient_penalty_loss = gradient_penalty(real, real_logits)
+                gradient_penalty_loss = gradient_penalty(real, real_logits) + gradient_penalty(fake, fake_logits)
             else:
                 gradient_penalty_loss = self.zero
 
