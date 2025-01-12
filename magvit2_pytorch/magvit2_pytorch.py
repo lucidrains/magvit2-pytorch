@@ -99,7 +99,7 @@ def pick_video_frame(video, frame_indices):
 
 # gan related
 
-def gradient_penalty(images, output):
+def gradient_penalty(images, output, center = 0.):
     batch_size = images.shape[0]
 
     gradients = torch_grad(
@@ -112,7 +112,7 @@ def gradient_penalty(images, output):
     )[0]
 
     gradients = rearrange(gradients, 'b ... -> b (...)')
-    return ((gradients.norm(2, dim = 1) - 1) ** 2).mean()
+    return ((gradients.norm(2, dim = 1) - center) ** 2).mean()
 
 def leaky_relu(p = 0.1):
     return nn.LeakyReLU(p)
